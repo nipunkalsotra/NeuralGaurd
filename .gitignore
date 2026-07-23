@@ -1,0 +1,36 @@
+# Real environment files — NEVER commit these (contain live API keys)
+.env
+.env.local
+person1.env
+person2.env
+person3.env
+person4.env
+*.env
+!.env.example
+
+# Docker
+audit_logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node / React dashboard
+node_modules/
+.vite/
+dist/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
