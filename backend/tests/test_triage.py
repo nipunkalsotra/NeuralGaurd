@@ -44,14 +44,19 @@ def test_diagnose_nemotron_fails_falls_back_to_groq(agent):
     assert result["root_cause"] == "Tax_ID missing"
 
 
+# backend/tests/test_triage.py
+# Replace this test
+
 def test_diagnose_both_fail_returns_unknown(agent):
     with patch.object(agent.nemotron_client, "chat", side_effect=Exception("down")):
         with patch.object(agent.groq_client, "chat", side_effect=Exception("down")):
             result = agent.diagnose(LOOP_EVENT, LOG_LINES)
 
-    assert result["root_cause"] == "unknown"
+    # LOG_LINES doesn't match any known heuristic pattern, so this falls
+    # through to the heuristic's own "no match" case.
     assert result["confidence"] == 0.0
-    assert result["fallback_origin"] == "none_available"
+    assert result["fallback_used"] is True
+    assert result["fallback_origin"] == "rule_based_heuristic"
 
 
 def test_diagnose_groq_malformed_json_gets_repaired(agent):
@@ -90,3 +95,38 @@ def test_diagnose_cache_hit_skips_api_call(agent):
         agent.diagnose(loop_event_with_hash, LOG_LINES)
         agent.diagnose(loop_event_with_hash, LOG_LINES)
     assert mock_nemotron.call_count == 1
+
+# backend/tests/test_triage.py — add these
+
+def test_diagnose_all_llms_fail_falls_back_to_heuristic(agent):
+    """Nemotron + Groq both fail -> rule-based heuristic catches known pattern."""
+    logs = ["Error: Field 'Tax_ID' not found in schema", "Retrying..."]
+    with patch.object(agent.nemotron_client, "chat", side_effect=Exception("down")):
+        with patch.object(agent.groq_client, "chat", side_effect=Exception("down")):
+            result = agent.diagnose(LOOP_EVENT, logs)
+
+    assert result["fallback_used"] is True
+    assert result["fallback_origin"] == "rule_based_heuristic"
+    assert result["fix_type"] == "SCHEMA_MISMATCH"
+    assert "Tax_ID" in result["affected_field"]
+
+
+def test_heuristic_catches_timeout_pattern(agent):
+    logs = ["Request timed out after 30s"]
+    with patch.object(agent.nemotron_client, "chat", side_effect=Exception("down")):
+        with patch.object(agent.groq_client, "chat", side_effect=Exception("down")):
+            result = agent.diagnose(LOOP_EVENT, logs)
+
+    assert result["fix_type"] == "TIMEOUT"
+
+
+def test_heuristic_no_match_returns_unknown_but_never_crashes(agent):
+    """Completely unrecognized log pattern -> heuristic returns gracefully, no exception."""
+    logs = ["Some completely novel error nobody has seen before xyz123"]
+    with patch.object(agent.nemotron_client, "chat", side_effect=Exception("down")):
+        with patch.object(agent.groq_client, "chat", side_effect=Exception("down")):
+            result = agent.diagnose(LOOP_EVENT, logs)
+
+    assert result["confidence"] == 0.0
+    assert result["fallback_origin"] == "rule_based_heuristic"
+    # Critically: this must NOT raise — it's the last resort, must always work

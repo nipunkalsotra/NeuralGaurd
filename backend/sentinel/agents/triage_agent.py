@@ -1,13 +1,16 @@
 # backend/sentinel/agents/triage_agent.py
 """
 Triage Agent — Root Cause Analysis
-Day 2: LoopEvent + log lines -> structured JSON diagnosis.
+Day 2: LoopEvent + log lines -> structured JSON diagnosis (Nemotron primary, Groq fallback).
 Day 4: DiagnosisCache wired in (30 min TTL, fallback_origin tracking).
-Primary: Nemotron. Fallback 1: Groq. Fallback 2: rule-based heuristic (Day 3+ TODO).
+Day 4: Rule-based heuristic added as Fallback 2 (last resort, zero API cost, always works).
+
+Full fallback chain: Nemotron -> Groq -> rule-based heuristic.
 """
 
 import hashlib
 import os
+import re
 
 import httpx
 
@@ -17,6 +20,8 @@ from sentinel.fallback.json_repair import repair_json
 
 
 class NemotronClient:
+    """Primary LLM: NVIDIA Nemotron via NIM."""
+
     def __init__(self):
         self.api_key = os.getenv("NVIDIA_NIM_API_KEY")
         self.url = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -41,6 +46,8 @@ class NemotronClient:
 
 
 class GroqClient:
+    """Fallback 1: Groq Llama 3.3 70B (no native JSON mode)."""
+
     def __init__(self):
         self.api_key = os.getenv("GROQ_API_KEY")
         self.url = "https://api.groq.com/openai/v1/chat/completions"
@@ -64,12 +71,89 @@ class GroqClient:
         return response.json()["choices"][0]["message"]["content"]
 
 
+class RuleBasedHeuristic:
+    """
+    Fallback 2 (last resort) for Triage. Zero API cost, zero network
+    dependency. Matches error signatures against known patterns.
+    Catches ~60-70% of common loop patterns per master doc Section 9.2.
+    """
+
+    # (regex to match in log lines, root_cause template, fix_type, affected_field template)
+    PATTERNS = [
+        (
+            r"field ['\"]?(\w+)['\"]? not found",
+            "Field '{field}' missing from expected schema",
+            "SCHEMA_MISMATCH",
+            "{field}",
+        ),
+        (
+            r"['\"]?(\w+)['\"]? is required",
+            "Required field '{field}' missing",
+            "SCHEMA_MISMATCH",
+            "{field}",
+        ),
+        (
+            r"expected (\w+), got (\w+)",
+            "Type mismatch: expected {field} type",
+            "TYPE_ERROR",
+            "unknown",
+        ),
+        (
+            r"timeout|timed out",
+            "Operation timed out, likely downstream service unavailable",
+            "TIMEOUT",
+            "unknown",
+        ),
+        (
+            r"connection refused|econnrefused",
+            "Downstream service connection refused",
+            "CONNECTION_ERROR",
+            "unknown",
+        ),
+        (
+            r"out of memory|oom",
+            "Worker ran out of memory during processing",
+            "RESOURCE_ERROR",
+            "unknown",
+        ),
+    ]
+
+    # backend/sentinel/agents/triage_agent.py
+# Replace the classify() method in RuleBasedHeuristic
+
+    def classify(self, log_lines: list) -> dict:
+        original_logs = "\n".join(log_lines[-50:])
+
+        for pattern, root_cause_template, fix_type, field_template in self.PATTERNS:
+            match = re.search(pattern, original_logs, re.IGNORECASE)
+            if match:
+                field = match.group(1) if match.groups() else "unknown"
+                return {
+                    "root_cause": root_cause_template.format(field=field),
+                    "fix_type": fix_type,
+                    "affected_field": field_template.format(field=field),
+                    "confidence": 0.65,
+                    "fallback_used": True,
+                    "fallback_origin": "rule_based_heuristic",
+                }
+
+        return {
+            "root_cause": "unknown — no matching pattern in rule-based heuristic",
+            "fix_type": "unknown",
+            "affected_field": "unknown",
+            "confidence": 0.0,
+            "fallback_used": True,
+            "fallback_origin": "rule_based_heuristic",
+        }
+
+
 class TriageAgent:
     def __init__(self):
         self.nemotron_client = NemotronClient()
         self.groq_client = GroqClient()
         self.circuit_breaker = CircuitBreaker(failures=3, timeout=60)
         self.diagnosis_cache = DiagnosisCache(ttl=1800)  # 30 min
+        self.rule_based_heuristic = RuleBasedHeuristic()
 
     def _cache_key(self, log_lines: list, error_signature: str) -> str:
         content = "".join(log_lines[-50:]) + error_signature
@@ -101,7 +185,7 @@ Return ONLY valid JSON in this exact format, no other text:
 
         prompt = self.build_prompt(loop_event, log_lines)
 
-        # Try Nemotron (primary)
+        # Primary: Nemotron
         if self.circuit_breaker.is_closed():
             try:
                 raw = self.nemotron_client.chat(prompt)
@@ -123,14 +207,9 @@ Return ONLY valid JSON in this exact format, no other text:
             self.diagnosis_cache.set(cache_key, result, fallback_origin="groq")
             return result
         except Exception as e:
-            print(f"[TriageAgent] Groq failed too: {e}")
+            print(f"[TriageAgent] Groq failed too, using rule-based heuristic: {e}")
 
-        # Fallback 2: rule-based heuristic — TODO Day 3+
-        return {
-            "root_cause": "unknown",
-            "fix_type": "unknown",
-            "affected_field": "unknown",
-            "confidence": 0.0,
-            "fallback_used": True,
-            "fallback_origin": "none_available",
-        }
+        # Fallback 2 (last resort): rule-based heuristic — zero API cost, always works
+        result = self.rule_based_heuristic.classify(log_lines)
+        self.diagnosis_cache.set(cache_key, result, fallback_origin="rule_based_heuristic")
+        return result
