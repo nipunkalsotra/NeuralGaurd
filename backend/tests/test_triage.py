@@ -77,3 +77,16 @@ def test_build_prompt_truncates_to_last_50_lines(agent):
     prompt = agent.build_prompt(LOOP_EVENT, long_logs)
     assert "log line 50" in prompt
     assert "log line 0" not in prompt
+
+# backend/tests/test_triage.py
+# Add this test at the bottom, alongside the existing ones
+
+def test_diagnose_cache_hit_skips_api_call(agent):
+    """Second call with identical log_lines + error_signature should hit cache."""
+    loop_event_with_hash = {**LOOP_EVENT, "error_hash": "same_error_hash"}
+    with patch.object(
+        agent.nemotron_client, "chat", return_value=VALID_JSON_RESPONSE
+    ) as mock_nemotron:
+        agent.diagnose(loop_event_with_hash, LOG_LINES)
+        agent.diagnose(loop_event_with_hash, LOG_LINES)
+    assert mock_nemotron.call_count == 1
