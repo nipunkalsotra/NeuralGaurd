@@ -5,15 +5,33 @@ Day 1 Scaffold: fallback structure (NIM -> sentence-transformers -> hash).
 Full detect_loop() logic with cosine similarity is a Day 2 task.
 """
 
+# backend/sentinel/agents/sentinel_agent.py
+# Add these imports at top, keep everything else from Day 1 as-is
+
 import hashlib
 from collections import deque
 from datetime import datetime, timezone
 
 import httpx
+import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from sentinel.fallback.circuit_breaker import CircuitBreaker
 from sentinel.cache.embedding_cache import EmbeddingCache
+
+
+def cosine_similarity(vec_a: list, vec_b: list) -> float:
+    a = np.array(vec_a)
+    b = np.array(vec_b)
+    if a.shape != b.shape:
+        # Different embedding sources (e.g. NIM vs hash fallback) produce
+        # different dims — can't compare meaningfully, treat as dissimilar.
+        return 0.0
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return float(np.dot(a, b) / (norm_a * norm_b))
 
 
 class NIMEmbeddingClient:
@@ -82,14 +100,49 @@ class SentinelAgent:
         return [float(hash_val)]
 
     def detect_loop(self, worker_id: str, output_text: str, error_signature: str):
+        """
+        Sliding window of last N=10 (output, embedding) pairs per worker.
+        Trigger LOOP_SUSPECTED when cosine similarity > 0.92 for k=3
+        consecutive steps AND error_signature repeats across those steps.
+        """
         window = self.windows.setdefault(worker_id, deque(maxlen=10))
+
+        embedding = self.embed(output_text)
         window.append(
             {
                 "output": output_text,
-                "embedding": self.embed(output_text),
+                "embedding": embedding,
                 "error_signature": error_signature,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
-        # TODO (Day 2): cosine similarity check + LOOP_SUSPECTED event
+
+        if len(window) < 4:
+            # need at least 4 samples to compute 3 consecutive similarities
+            return None
+
+        window_list = list(window)
+        similarities = []
+        for i in range(-3, 0):
+            sim = cosine_similarity(
+                window_list[i - 1]["embedding"], window_list[i]["embedding"]
+            )
+            similarities.append(sim)
+
+        all_similar = all(s > 0.92 for s in similarities)
+
+        last_three_errors = [w["error_signature"] for w in window_list[-3:]]
+        error_repeats = len(set(last_three_errors)) == 1
+
+        if all_similar and error_repeats:
+            event = {
+                "worker_id": worker_id,
+                "similarity": similarities[-1],
+                "consecutive_count": 3,
+                "error_hash": hashlib.sha256(error_signature.encode()).hexdigest(),
+                "embedding_vector": embedding,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            return event
+
         return None
