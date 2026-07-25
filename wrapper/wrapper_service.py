@@ -1,22 +1,19 @@
-from fastapi import FastAPI
-app = FastAPI()
-
-@app.get("/v1/status")
-def status():
-    return {"status": "ok", "mode": "mock"}# wrapper/wrapper_service.py
+# wrapper/wrapper_service.py
 """
-NemoClaw Mock Wrapper — Day 1
-Simulates the real NemoClaw CLI adapter (Shreshtha builds the real one, Days 8-9).
-Same HTTP contract as the real wrapper, so RemediationAgent code is identical either way.
+NemoClaw Wrapper — thin FastAPI app that mode-switches between mock and real.
 """
 
-import asyncio
-from datetime import datetime, timezone
+import os
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from mock.mock_wrapper import mock_remediate
+from real.nemoclaw_adapter import nemoclaw_remediate
+
 app = FastAPI()
+
+NEMOCLAW_MODE = os.getenv("NEMOCLAW_MODE", "mock")
 
 
 class RemediateRequest(BaseModel):
@@ -34,31 +31,23 @@ class RemediateResponse(BaseModel):
 
 @app.get("/v1/status")
 def status():
-    return {"status": "ok", "mode": "mock"}
+    return {"status": "ok", "mode": NEMOCLAW_MODE}
 
 
 @app.post("/v1/remediate", response_model=RemediateResponse)
 async def remediate(request: RemediateRequest):
-    # Simulate sandbox execution time (real NemoClaw exec is not instant either)
-    await asyncio.sleep(2)
+    if NEMOCLAW_MODE == "nemoclaw":
+        try:
+            result = await nemoclaw_remediate(request.patch, request.test_fixture)
+            return RemediateResponse(**result)
+        except Exception as e:
+            # Auto-fallback: nemoclaw failed, switch to mock for this request
+            result = await mock_remediate(
+                request.patch, request.test_fixture,
+                flagged=True, reason="nemoclaw_cli_failed"
+            )
+            return RemediateResponse(**result)
 
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    # sandbox_log styled after real nemoclaw CLI output patterns
-    # (banner line + exec output, per Shreshtha's nemoclaw_cli.md)
-    sandbox_log = (
-        f"[MOCK] ✓ Active gateway set to 'nemoclaw'\n"
-        f"[MOCK] Sandbox: ai-factory-sentinel-mock\n"
-        f"[MOCK] Applying patch: {request.patch}\n"
-        f"[MOCK] Running test_fixture: {request.test_fixture}\n"
-        f"[MOCK] Patch verification: PASS\n"
-        f"[MOCK] Timestamp: {timestamp}"
-    )
-
-    return RemediateResponse(
-        verified=True,
-        output=f"Patch '{request.patch}' applied and verified successfully (mock mode).",
-        sandbox_log=sandbox_log,
-        mode="mock",
-        flagged=False,
-    )
+    # mock mode (default)
+    result = await mock_remediate(request.patch, request.test_fixture)
+    return RemediateResponse(**result)
