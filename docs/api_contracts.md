@@ -97,3 +97,19 @@ ReroutePlan format (unchanged, locked):
   "solver_used": "or-tools" | "greedy_round_robin"
 }
 ```
+
+## Circuit Breaker Service List (Day 6, for Tushar's Panel UI)
+**Owner:** Nipun | **Consumed by:** Tushar (Circuit Breaker Panel)
+
+Services with independent circuit breakers:
+| Service | Used by | States |
+|---|---|---|
+| NIM (embeddings) | Sentinel Agent | closed / half-open / open |
+| Nemotron | Triage Agent | closed / half-open / open |
+| Groq | Triage Agent (fallback) | closed / half-open / open |
+| NemoClaw | Wrapper Service | closed / half-open / open |
+| Wrapper (Remediation->wrapper HTTP call) | Remediation Agent | closed / half-open / open |
+
+Status colors: green=closed (healthy), yellow=half-open (recovering),
+red=open (failed). Each breaker: 3 consecutive failures -> opens for 60s
+-> half-open probe -> closes on success or reopens on failure.
