@@ -26,3 +26,38 @@
 - `mode` must switch to `"nemoclaw"` when running real CLI, stays `"mock"` for fallback
 - `flagged: true` (+ a `reason` field) expected when NemoClaw CLI fails and wrapper auto-falls-back to mock mid-request
 - `sandbox_log` should mirror real CLI banner style — `✓ Active gateway set to 'nemoclaw'` followed by command output — per `/docs/nemoclaw_cli.md`
+
+## ReroutePlan (Optimization Agent output)
+**Owner:** Rashi | **Locked:** Day 3 (scaffold) | **Consumed by:** Nipun (Orchestrator, Day 6)
+
+```json
+{
+  "assignments": [{"item_id": "item-1", "worker_id": "worker-2"}],
+  "excluded_workers": ["worker-3"],
+  "projected_throughput_pct": 97.0
+}
+```
+Day 3 note: `solve()` is a stub — returns empty `assignments`, real solver
+(cuOpt -> OR-Tools -> greedy) lands Day 4-6.
+
+## Audit Log Event Format (for dashboard)
+**Owner:** Rashi/Nipun (logger) | **Consumed by:** Tushar (Audit Log Stream UI)
+
+```json
+{
+  "timestamp": "2026-07-28T10:00:00Z",
+  "worker_id": "worker-3",
+  "from_state": "HEALTHY",
+  "to_state": "LOOP_SUSPECTED",
+  "trigger_event": "LOOP_SUSPECTED",
+  "agent_name": "SentinelAgent",
+  "confidence_score": null,
+  "fallback_used": false,
+  "fallback_origin": null,
+  "previous_hash": "abc123...",
+  "current_hash": "def456..."
+}
+```
+Suggested color coding by `to_state`: green=HEALTHY/RESUMED,
+amber=LOOP_SUSPECTED, blue=DIAGNOSING, orange=REMEDIATING,
+violet=VERIFYING, rose=ESCALATED — matches master doc Section 11.3 palette.
