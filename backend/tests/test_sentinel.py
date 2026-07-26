@@ -137,3 +137,19 @@ def test_detect_loop_different_errors_does_not_trigger(agent):
                 "worker-5", "Processing item", f"different_error_{i}"
             )
     assert result is None
+
+
+
+    # backend/tests/test_sentinel.py — add this
+
+def test_embedding_cache_expires_after_ttl(agent):
+    """Cache entry should expire and trigger a fresh API call after TTL passes."""
+    import time
+    agent.embedding_cache.ttl = 0.1  # 100ms for fast test
+
+    with patch.object(agent.nim_client, "embed", return_value=[0.5, 0.6, 0.7]) as mock_nim:
+        agent.embed("expiring text")
+        time.sleep(0.15)
+        agent.embed("expiring text")
+
+    assert mock_nim.call_count == 2  # cache expired, second call hit API again
