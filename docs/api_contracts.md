@@ -113,3 +113,10 @@ Services with independent circuit breakers:
 Status colors: green=closed (healthy), yellow=half-open (recovering),
 red=open (failed). Each breaker: 3 consecutive failures -> opens for 60s
 -> half-open probe -> closes on success or reopens on failure.
+
+## Day 7 Status Note
+WebSocket schema sign-off with Tushar and all Sandbox Terminal / [MOCK MODE]
+banner verification is DEFERRED — UI work is paused until backend
+(Nipun/Rashi/Shreshtha) reaches Day 8. Schema itself (docs/websocket_schema.md,
+locked by Shreshtha Day 3) is unaffected by this deferral — it will be
+verified against real dashboard code once UI work resumes.

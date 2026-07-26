@@ -4,7 +4,8 @@ Orchestrator — State Machine & Pub/Sub
 Day 3: HEALTHY -> LOOP_SUSPECTED -> DIAGNOSING wired to real Sentinel + Triage.
 Day 5: Full FSM states added. Audit logging on every transition.
        Optimization Agent dispatches in parallel via its own subscription.
-       Remediation dispatch STUBBED — agent doesn't exist until Day 7.
+Day 7: Remediation Agent wired in. verified=true -> RESUMED,
+       verified=false -> ESCALATED directly (no retry loop).
 """
 
 import logging
@@ -46,7 +47,7 @@ class Orchestrator:
         self,
         event_bus: EventBus,
         triage_agent,
-        remediation_agent=None,   # None until Day 7
+        remediation_agent=None,   # None until wired in (Day 7)
         optimization_agent=None,  # subscribes itself if provided
         audit_logger: Optional[TrustChainLogger] = None,
     ):
@@ -127,7 +128,9 @@ class Orchestrator:
 
     async def on_diagnosis_complete(self, event: dict) -> None:
         """DIAGNOSING -> REMEDIATING (confidence ok) or ESCALATED (low confidence).
-        Remediation dispatch is STUBBED — agent doesn't exist until Day 7."""
+        Day 7: Remediation Agent dispatched for real. Only verified=true
+        patches promote to RESUMED — verified=false routes to ESCALATED,
+        no retry loop (per master doc Section 4.3)."""
         worker_id = event["worker_id"]
         confidence = event.get("confidence", 0.0)
 
@@ -148,10 +151,36 @@ class Orchestrator:
             fallback_origin=event.get("fallback_origin"),
         )
 
-        if self.remediation_agent is not None:
-            pass  # TODO Day 7
-        else:
+        if self.remediation_agent is None:
             logger.info(
-                "[%s] Remediation Agent not yet available (Day 7) — "
-                "worker held in REMEDIATING state (stub)", worker_id,
+                "[%s] Remediation Agent not available — worker held in REMEDIATING (stub)",
+                worker_id,
+            )
+            return
+
+        remediation_result = await self.remediation_agent.remediate(event)
+
+        self.transition(
+            worker_id, WorkerState.VERIFYING,
+            trigger_event="REMEDIATION_ATTEMPTED", agent_name="RemediationAgent",
+        )
+
+        if remediation_result.get("verified") is True:
+            self.transition(
+                worker_id, WorkerState.RESUMED,
+                trigger_event="REMEDIATION_SUCCESS", agent_name="RemediationAgent",
+                fallback_used=remediation_result.get("flagged", False),
+            )
+            await self.event_bus.publish(
+                "REMEDIATION_SUCCESS",
+                {"worker_id": worker_id, **remediation_result},
+            )
+        else:
+            self.transition(
+                worker_id, WorkerState.ESCALATED,
+                trigger_event="REMEDIATION_FAILED", agent_name="RemediationAgent",
+            )
+            await self.event_bus.publish(
+                "ESCALATED",
+                {"worker_id": worker_id, **remediation_result},
             )

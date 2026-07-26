@@ -7,10 +7,12 @@ Verifies: Sentinel detects loop -> Orchestrator transitions -> Triage dispatched
 from unittest.mock import MagicMock
 
 import pytest
+import httpx
 
 from sentinel.agents.orchestrator import Orchestrator, WorkerState
 from sentinel.event_bus.asyncio_queue_bus import EventBus
-
+from sentinel.agents.remediation_agent import RemediationAgent
+from sentinel.audit.trustchain_logger import TrustChainLogger
 
 @pytest.fixture
 def mock_triage_agent():
@@ -106,3 +108,72 @@ async def test_fsm_healthy_to_diagnosing(orchestrator, mock_triage_agent):
 
     assert orchestrator.get_state("worker-3") == WorkerState.REMEDIATING
     mock_triage_agent.diagnose.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_full_fsm_verified_true_reaches_resumed(tmp_path, monkeypatch):
+    """End-to-end: HEALTHY -> ... -> REMEDIATING -> VERIFYING -> RESUMED
+    when wrapper returns verified=true."""
+    mock_triage = MagicMock()
+    mock_triage.diagnose.return_value = {
+        "root_cause": "Tax_ID missing", "fix_type": "SCHEMA_MISMATCH",
+        "affected_field": "Tax_ID", "confidence": 0.9, "fallback_used": False,
+    }
+
+    remediation_agent = RemediationAgent()
+
+    async def mock_post_verified_true(self, url, json=None, **kwargs):
+        request = httpx.Request("POST", url)
+        return httpx.Response(200, json={
+            "verified": True, "output": "ok", "sandbox_log": "",
+            "mode": "mock", "flagged": False,
+        }, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post_verified_true)
+
+    audit_logger = TrustChainLogger(log_file=str(tmp_path / "audit.jsonl"))
+    bus = EventBus()
+    orch = Orchestrator(
+        event_bus=bus, triage_agent=mock_triage,
+        remediation_agent=remediation_agent, audit_logger=audit_logger,
+    )
+
+    await bus.publish("LOOP_SUSPECTED", {"worker_id": "worker-3", "similarity": 0.95})
+
+    assert orch.get_state("worker-3") == WorkerState.RESUMED
+    assert audit_logger.verify_chain() is True
+
+
+@pytest.mark.asyncio
+async def test_full_fsm_verified_false_escalates_no_retry(tmp_path, monkeypatch):
+    """verified=false -> ESCALATED directly. No retry loop — confirm
+    remediate() is called exactly once, not looped."""
+    mock_triage = MagicMock()
+    mock_triage.diagnose.return_value = {
+        "root_cause": "unknown", "fix_type": "SCHEMA_MISMATCH",
+        "affected_field": "X", "confidence": 0.9, "fallback_used": False,
+    }
+
+    remediation_agent = RemediationAgent()
+    call_count = {"count": 0}
+
+    async def mock_post_verified_false(self, url, json=None, **kwargs):
+        call_count["count"] += 1
+        request = httpx.Request("POST", url)
+        return httpx.Response(200, json={
+            "verified": False, "output": "patch failed", "sandbox_log": "",
+            "mode": "mock", "flagged": False,
+        }, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post_verified_false)
+
+    audit_logger = TrustChainLogger(log_file=str(tmp_path / "audit.jsonl"))
+    bus = EventBus()
+    orch = Orchestrator(
+        event_bus=bus, triage_agent=mock_triage,
+        remediation_agent=remediation_agent, audit_logger=audit_logger,
+    )
+
+    await bus.publish("LOOP_SUSPECTED", {"worker_id": "worker-4", "similarity": 0.95})
+
+    assert orch.get_state("worker-4") == WorkerState.ESCALATED
+    assert call_count["count"] == 1  # confirms NO retry loop
