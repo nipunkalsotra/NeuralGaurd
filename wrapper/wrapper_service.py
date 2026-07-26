@@ -34,6 +34,9 @@ def status():
     return {"status": "ok", "mode": NEMOCLAW_MODE}
 
 
+# wrapper/wrapper_service.py
+# Update the /v1/remediate endpoint's nemoclaw branch
+
 @app.post("/v1/remediate", response_model=RemediateResponse)
 async def remediate(request: RemediateRequest):
     if NEMOCLAW_MODE == "nemoclaw":
@@ -41,12 +44,17 @@ async def remediate(request: RemediateRequest):
             result = await nemoclaw_remediate(request.patch, request.test_fixture)
             return RemediateResponse(**result)
         except Exception as e:
-            # Auto-fallback: nemoclaw failed, switch to mock for this request
+            # Day 5: log and fall through to mock for now.
+            # Day 8: full auto-fallback logic with specific reason codes lands here.
+            print(f"[wrapper] nemoclaw_remediate failed: {e}")
             result = await mock_remediate(
                 request.patch, request.test_fixture,
-                flagged=True, reason="nemoclaw_cli_failed"
+                flagged=True, reason=f"nemoclaw_cli_failed: {e}"
             )
             return RemediateResponse(**result)
+
+    result = await mock_remediate(request.patch, request.test_fixture)
+    return RemediateResponse(**result)
 
     # mock mode (default)
     result = await mock_remediate(request.patch, request.test_fixture)

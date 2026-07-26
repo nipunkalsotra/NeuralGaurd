@@ -364,5 +364,79 @@ real load.
 
 ---
 
-*Day 1 samples captured 2026-07-24. Day 3 parsing strategy and error
-scenarios captured 2026-07-27, real-tested against the live sandbox.*
+---
+
+## Day 5: Real Adapter Implementation
+
+### Discovery: `exec` has no NemoClaw-specific "apply patch" verb
+
+**Attempted:**
+```
+nemoclaw ai-factory-sentinel exec -- apply-patch "test patch" --fixture "test_fixture.json"
+```
+
+**Result:**
+```
+✓ Active gateway set to 'nemoclaw'
+nemoclaw-runtime-env: line 1: exec: apply-patch: not found
+```
+Exit code: **127** (standard "command not found")
+
+**Confirmed:** `nemoclaw exec` only runs **literal shell commands** that
+exist inside the sandbox (matches every sample seen since Day 1 — `echo`,
+`sleep`, `false`, `cat`). There is no special NemoClaw verb for "apply this
+patch." The wrapper adapter must construct its own real command — writing
+and running the patch logic itself — rather than assuming a
+patch-application subcommand exists.
+
+### Working solution: Python one-liner via `exec`
+
+Since `/usr/bin/python3` is present in the sandbox's allowed binaries list
+(see `status` → `network_policies` → various endpoints), the adapter now
+constructs a `python3 -c "..."` command that receives the patch and
+test_fixture as literals and performs the (currently placeholder) patch
+logic, printing a JSON result to stdout.
+
+**Verified working, real sandbox run:**
+```
+Request: {"patch": "test patch", "test_fixture": "test_fixture.json"}
+
+stdout: {"patch_applied": true, "patch": "test patch", "test_fixture": "test_fixture.json"}
+exit_code: 0
+verified: true
+```
+
+### Note on banner location varying by command
+In this Day 5 test, the `✓ Active gateway set to 'nemoclaw'` banner (with
+ANSI color codes) appeared on **stderr** rather than stdout, unlike earlier
+samples where it consistently appeared first on stdout. Current
+banner-stripping logic only filters stdout — stderr is passed through
+as-is into `sandbox_log`. Not currently causing incorrect `verified`
+results (banner location doesn't affect the returncode-based verification
+logic), but worth revisiting during Day 8-9 polish if stderr parsing needs
+to be cleaner for the dashboard's Sandbox Terminal display.
+
+### Known limitation — placeholder patch logic
+The current Python one-liner doesn't perform real patch application; it
+echoes back confirmation that the patch/fixture were received. Real patch
+semantics (what a "patch" object contains, how it modifies the fixture,
+how success/failure is actually determined beyond exit code) depend on
+the Remediation Agent's output format, which Nipun defines on Day 7. This
+adapter's command-construction logic will need updating once that contract
+is locked.
+
+### Updated summary table
+
+| Scenario | Exit Code | Auto-fallback to mock? |
+|---|---|---|
+| Success | 0 | No — use real result |
+| Gateway unreachable (connection refused) | N/A (transport error) | Attempt `connect` recovery first, then fallback if still failing |
+| Timeout (>30s) | 124 (shell) / caught via `asyncio.TimeoutError` | Yes |
+| Non-zero exit (legitimate patch failure) | 1 | No — return `verified: false` directly |
+| OOM (inconclusive signal) | 1 (ambiguous, expected 137) | Yes (conservative choice) |
+| `apply-patch` style subcommand (doesn't exist) | 127 | N/A — fixed by using real shell/python commands instead |
+
+---
+
+
+
