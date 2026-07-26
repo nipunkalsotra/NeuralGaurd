@@ -75,3 +75,25 @@ Agent is Nipun's Day 7 task, does not exist yet. Full end-to-end test
 
 Every transition writes an immutable, hash-chained audit record via
 TrustChainLogger.
+
+## Optimization Agent — Solver Status (Days 4-5)
+**Decision:** cuOpt SKIPPED for this project — hosted REST API access was
+never confirmed working (see earlier investigation: no stable public
+endpoint found, `HTTP 000` on attempted calls, likely requires
+self-hosted NIM container or restricted trial access not available to us).
+
+**Practical fallback chain implemented:** OR-Tools (primary) -> greedy
+round-robin (last resort). This still satisfies the master doc's
+resilience philosophy (Section 9.3) — OR-Tools was always meant to be a
+fallback FOR cuOpt, so using it as practical primary is a reasonable,
+honest scope adjustment, not a missing feature.
+
+ReroutePlan format (unchanged, locked):
+```json
+{
+  "assignments": [{"item_id": "item-1", "worker_id": "worker-2"}],
+  "excluded_workers": ["worker-3"],
+  "projected_throughput_pct": 97.0,
+  "solver_used": "or-tools" | "greedy_round_robin"
+}
+```
