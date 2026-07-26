@@ -120,3 +120,12 @@ banner verification is DEFERRED — UI work is paused until backend
 (Nipun/Rashi/Shreshtha) reaches Day 8. Schema itself (docs/websocket_schema.md,
 locked by Shreshtha Day 3) is unaffected by this deferral — it will be
 verified against real dashboard code once UI work resumes.
+
+## Day 6-7 Status (Rashi, covered)
+- cuOpt circuit breaker added to OR-Tools solve chain — closes remaining
+  Day 6 gap (cuOpt itself remains explicitly skipped, per earlier decision).
+- Fault Injection Backend (POST /demo/inject) complete, all 4 fault types
+  tested. Confirmed feeding into Sentinel's real detect_loop().
+- DEFERRED (UI phase): Health Indicators UI, 'Break It' button, WebSocket
+  streaming of fault events to dashboard. Backend fault injection API is
+  fully functional and ready for Tushar to wire up once UI work resumes.

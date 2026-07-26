@@ -122,3 +122,16 @@ async def test_on_loop_suspected_publishes_optimization_complete():
 
     assert len(received) == 1
     assert "assignments" in received[0]
+
+# backend/tests/test_optimization.py — add this
+
+def test_circuit_breaker_opens_after_3_or_tools_failures(agent, monkeypatch):
+    def broken(problem):
+        raise RuntimeError("simulated failure")
+    monkeypatch.setattr(agent, "solve_with_or_tools", broken)
+
+    problem = agent.formulate_problem("worker-3", [{"id": "item-1"}], [{"id": "worker-1"}])
+    for _ in range(3):
+        agent.solve(problem)
+
+    assert agent.circuit_breaker.is_closed() is False
