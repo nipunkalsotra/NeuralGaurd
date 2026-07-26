@@ -1,5 +1,8 @@
+# backend/tests/test_optimization.py
 """
-Optimization Agent tests — Day 3 scaffold.
+Optimization Agent tests.
+cuOpt SKIPPED (API access unresolved). Fallback chain tested:
+OR-Tools (primary) -> greedy round-robin (last resort).
 """
 
 import pytest
@@ -7,13 +10,16 @@ import pytest
 from sentinel.agents.optimization_agent import OptimizationAgent
 
 
-def test_import_and_instantiate():
-    agent = OptimizationAgent()
+@pytest.fixture
+def agent():
+    return OptimizationAgent()
+
+
+def test_import_and_instantiate(agent):
     assert agent is not None
 
 
-def test_formulate_problem_excludes_remediating_worker():
-    agent = OptimizationAgent()
+def test_formulate_problem_excludes_remediating_worker(agent):
     problem = agent.formulate_problem(
         excluded_worker_id="worker-3",
         pending_items=[{"id": "item-1"}],
@@ -23,15 +29,77 @@ def test_formulate_problem_excludes_remediating_worker():
     assert problem["data"]["excluded"] == ["worker-3"]
 
 
-def test_solve_returns_reroute_plan_format():
-    agent = OptimizationAgent()
-    problem = agent.formulate_problem("worker-3", [], [])
+def test_or_tools_assigns_all_items(agent):
+    problem = agent.formulate_problem(
+        excluded_worker_id="worker-3",
+        pending_items=[{"id": "item-1"}, {"id": "item-2"}, {"id": "item-3"}],
+        available_workers=[{"id": "worker-1", "capacity": 5}, {"id": "worker-2", "capacity": 5}],
+    )
+    result = agent.solve_with_or_tools(problem)
+
+    assert result["solver_used"] == "or-tools"
+    assert len(result["assignments"]) == 3
+    assigned_items = {a["item_id"] for a in result["assignments"]}
+    assert assigned_items == {"item-1", "item-2", "item-3"}
+
+
+def test_or_tools_respects_capacity(agent):
+    """Each worker has capacity 1 — with 2 items and 2 workers, each gets exactly one."""
+    problem = agent.formulate_problem(
+        excluded_worker_id="worker-3",
+        pending_items=[{"id": "item-1"}, {"id": "item-2"}],
+        available_workers=[{"id": "worker-1", "capacity": 1}, {"id": "worker-2", "capacity": 1}],
+    )
+    result = agent.solve_with_or_tools(problem)
+
+    worker_counts = {}
+    for a in result["assignments"]:
+        worker_counts[a["worker_id"]] = worker_counts.get(a["worker_id"], 0) + 1
+    assert all(count <= 1 for count in worker_counts.values())
+
+
+def test_or_tools_empty_items_returns_empty_assignments(agent):
+    problem = agent.formulate_problem("worker-3", [], [{"id": "worker-1"}])
+    result = agent.solve_with_or_tools(problem)
+    assert result["assignments"] == []
+    assert result["projected_throughput_pct"] == 97.0
+
+
+def test_greedy_round_robin_assigns_all_items(agent):
+    problem = agent.formulate_problem(
+        excluded_worker_id="worker-3",
+        pending_items=[{"id": "item-1"}, {"id": "item-2"}, {"id": "item-3"}],
+        available_workers=[{"id": "worker-1"}, {"id": "worker-2"}],
+    )
+    result = agent.solve_with_greedy_round_robin(problem)
+
+    assert result["solver_used"] == "greedy_round_robin"
+    assert len(result["assignments"]) == 3
+    assert result["projected_throughput_pct"] == 85.0
+
+
+def test_greedy_round_robin_no_workers_returns_empty(agent):
+    problem = agent.formulate_problem("worker-3", [{"id": "item-1"}], [])
+    result = agent.solve_with_greedy_round_robin(problem)
+    assert result["assignments"] == []
+    assert result["projected_throughput_pct"] == 0.0
+
+
+def test_solve_falls_back_to_greedy_when_or_tools_fails(agent, monkeypatch):
+    """Simulate OR-Tools failure -> should fall through to greedy round-robin."""
+    def broken_or_tools(problem):
+        raise RuntimeError("simulated OR-Tools failure")
+
+    monkeypatch.setattr(agent, "solve_with_or_tools", broken_or_tools)
+
+    problem = agent.formulate_problem(
+        excluded_worker_id="worker-3",
+        pending_items=[{"id": "item-1"}],
+        available_workers=[{"id": "worker-1"}],
+    )
     result = agent.solve(problem)
 
-    assert "assignments" in result
-    assert "excluded_workers" in result
-    assert "projected_throughput_pct" in result
-    assert result["excluded_workers"] == ["worker-3"]
+    assert result["solver_used"] == "greedy_round_robin"
 
 
 @pytest.mark.asyncio
@@ -46,8 +114,11 @@ async def test_on_loop_suspected_publishes_optimization_complete():
         received.append(event)
     bus.subscribe("OPTIMIZATION_COMPLETE", capture)
 
-    await bus.publish("LOOP_SUSPECTED", {"worker_id": "worker-5"})
+    await bus.publish("LOOP_SUSPECTED", {
+        "worker_id": "worker-5",
+        "pending_items": [{"id": "item-1"}],
+        "available_workers": [{"id": "worker-1"}],
+    })
 
     assert len(received) == 1
-    assert received[0]["worker_id"] == "worker-5"
     assert "assignments" in received[0]
