@@ -61,3 +61,17 @@ Day 3 note: `solve()` is a stub — returns empty `assignments`, real solver
 Suggested color coding by `to_state`: green=HEALTHY/RESUMED,
 amber=LOOP_SUSPECTED, blue=DIAGNOSING, orange=REMEDIATING,
 violet=VERIFYING, rose=ESCALATED — matches master doc Section 11.3 palette.
+
+## Orchestrator State Transitions (Day 5, Updated)
+**Owner:** Nipun | For: Tushar's Workflow DAG animations
+
+Live end-to-end today: HEALTHY → LOOP_SUSPECTED → DIAGNOSING → REMEDIATING,
+with Optimization Agent dispatched genuinely in parallel (not stubbed —
+confirmed via test_optimization_and_triage_dispatch_in_parallel).
+
+REMEDIATING → VERIFYING → RESUMED/ESCALATED remains stubbed — Remediation
+Agent is Nipun's Day 7 task, does not exist yet. Full end-to-end test
+(HEALTHY through RESUMED) is not possible until then.
+
+Every transition writes an immutable, hash-chained audit record via
+TrustChainLogger.
