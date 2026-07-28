@@ -1,46 +1,39 @@
-import { create } from 'zustand';
+// src/store/dashboardStore.ts
+import { create } from "zustand";
+import type { WorkerState } from "../components/AgentOrb";
 
-interface Worker {
-  id: string;
-  state: string;
-  similarity: number;
+export type AgentId = "sentinel" | "triage" | "remediation" | "optimization" | "orchestrator";
+
+interface AgentRuntime {
+  state: WorkerState;
+  events: string[];
+  fallbackActive: boolean;
 }
 
-interface AuditRecord {
-  timestamp: string;
-  worker_id: string;
-  from_state: string;
-  to_state: string;
-  [key: string]: unknown;
+interface DashboardStore {
+  agents: Record<AgentId, AgentRuntime>;
+  activeEdge: string | null;
+  setAgentState: (id: AgentId, state: WorkerState, event?: string) => void;
+  setActiveEdge: (edgeId: string | null) => void;
+  resetAll: () => void;
 }
 
-interface DashboardState {
-  workers: Worker[];
-  auditLog: AuditRecord[];
-  circuitBreakers: Record<string, string>;
-  throughput: number;
-  currentView: string;
-  setWorkers: (workers: Worker[]) => void;
-  addAuditRecord: (record: AuditRecord) => void;
-  setCircuitBreakerStatus: (service: string, status: string) => void;
-  setThroughput: (value: number) => void;
-  setCurrentView: (view: string) => void;
-}
+const initialAgents: Record<AgentId, AgentRuntime> = {
+  sentinel: { state: "HEALTHY", events: [], fallbackActive: false },
+  triage: { state: "HEALTHY", events: [], fallbackActive: false },
+  remediation: { state: "HEALTHY", events: [], fallbackActive: false },
+  optimization: { state: "HEALTHY", events: [], fallbackActive: false },
+  orchestrator: { state: "HEALTHY", events: [], fallbackActive: false },
+};
 
-export const useDashboardStore = create<DashboardState>((set) => ({
-  workers: [],
-  auditLog: [],
-  circuitBreakers: {},
-  throughput: 100,
-  currentView: 'overview',
-
-  setWorkers: (workers) => set({ workers }),
-  addAuditRecord: (record) =>
-    set((state) => ({ auditLog: [...state.auditLog, record] })),
-  setCircuitBreakerStatus: (service, status) =>
-    set((state) => ({
-      circuitBreakers: { ...state.circuitBreakers, [service]: status },
-    })),
-  setThroughput: (value) => set({ throughput: value }),
-  setCurrentView: (view) => set({ currentView: view }),
+export const useDashboardStore = create<DashboardStore>((set) => ({
+  agents: initialAgents,
+  activeEdge: null,
+  setAgentState: (id, state, event) =>
+    set((s) => {
+      const events = event ? [event, ...s.agents[id].events].slice(0, 3) : s.agents[id].events;
+      return { agents: { ...s.agents, [id]: { ...s.agents[id], state, events } } };
+    }),
+  setActiveEdge: (edgeId) => set({ activeEdge: edgeId }),
+  resetAll: () => set({ agents: initialAgents, activeEdge: null }),
 }));

@@ -1,86 +1,81 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+// src/hooks/useWebSocket.ts
+import { useEffect, useRef, useState } from "react";
 
-type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
-
-interface WSMessage {
-  type: string;
-  event_type: string;
-  worker_id: string;
-  payload: string;
-  timestamp: string;
+interface UseWebSocketOptions<T> {
+  url?: string;
+  onMessage?: (data: T) => void;
+  mockFallback?: () => void;
 }
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/stream';
 const MAX_RECONNECT_DELAY = 30000;
-const MAX_EVENTS = 500; // cap in-memory event history
 
-export function useWebSocket() {
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
-  const [events, setEvents] = useState<WSMessage[]>([]);
+export function useWebSocket<T = unknown>({ url, onMessage, mockFallback }: UseWebSocketOptions<T>) {
+  const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempt = useRef(0);
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const isUnmounting = useRef(false);
-
-  const connect = useCallback(() => {
-    setConnectionStatus('connecting');
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setConnectionStatus('connected');
-      reconnectAttempt.current = 0;
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const message: WSMessage = JSON.parse(event.data);
-        setEvents((prev) => {
-          const next = [...prev, message];
-          return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
-        });
-      } catch (e) {
-        console.error('Failed to parse WS message:', e);
-      }
-    };
-
-    ws.onclose = () => {
-      setConnectionStatus('disconnected');
-
-      // Don't reconnect if we intentionally closed this during unmount
-      if (isUnmounting.current) return;
-
-      const delay = Math.min(1000 * 2 ** reconnectAttempt.current, MAX_RECONNECT_DELAY);
-      reconnectAttempt.current += 1;
-      reconnectTimeout.current = setTimeout(connect, delay);
-    };
-
-    ws.onerror = () => {
-      setConnectionStatus('error');
-    };
-  }, []);
+  const mockStarted = useRef(false);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
-    isUnmounting.current = false;
+    cancelledRef.current = false;
+
+    if (!url) {
+      mockFallback?.();
+      return () => {
+        cancelledRef.current = true;
+      };
+    }
+
+    const connect = () => {
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (cancelledRef.current) return;
+        setConnected(true);
+        reconnectAttempt.current = 0;
+        console.log("WebSocket connected:", url);
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const parsed = JSON.parse(e.data) as T;
+          onMessage?.(parsed);
+        } catch {
+          console.warn("Malformed WebSocket message, ignoring:", e.data);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.warn("WebSocket error:", err);
+      };
+
+      ws.onclose = () => {
+        if (cancelledRef.current) return;
+        setConnected(false);
+
+        // Start mock on first disconnect, keep retrying real connection in background
+        if (!mockStarted.current) {
+          mockStarted.current = true;
+          mockFallback?.();
+        }
+
+        const delay = Math.min(1000 * 2 ** reconnectAttempt.current, MAX_RECONNECT_DELAY);
+        reconnectAttempt.current += 1;
+        reconnectTimeout.current = setTimeout(connect, delay);
+      };
+    };
+
     connect();
 
     return () => {
-      isUnmounting.current = true;
+      cancelledRef.current = true;
       if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
       wsRef.current?.close();
     };
-  }, [connect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
 
-  const sendMessage = useCallback((data: object) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data));
-    }
-  }, []);
-
-  return {
-    connected: connectionStatus === 'connected',
-    connectionStatus,
-    events,
-    sendMessage,
-  };
+  return { connected };
 }
