@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.health import router as health_router
 from api.websocket import router as websocket_router
 from api.fault_injection import router as fault_injection_router
+from api.circuit_status import router as circuit_status_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sentinel.main")
@@ -49,6 +50,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(websocket_router)
 app.include_router(fault_injection_router)
+app.include_router(circuit_status_router)
 
 @app.on_event("startup")
 async def on_startup() -> None:
