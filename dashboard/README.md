@@ -1,75 +1,82 @@
-# React + TypeScript + Vite
+# AI Factory Sentinel — Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Real-time React control plane for the self-healing agentic workflow orchestrator.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+npm run dev
+```
+Opens on `http://localhost:3000`.
 
-## React Compiler
+## WebSocket connection
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Configured via `.env.local` (gitignored — create your own):
+```bash
+VITE_WS_URL=ws://localhost:8000/ws/stream
+```
+Defaults to `ws://localhost:8000/ws/stream` if unset. For integration
+testing against a teammate's backend, point this at their LAN IP or
+ngrok URL instead.
 
-## Expanding the ESLint configuration
+## Tech stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+React 18 + TypeScript + Vite, Tailwind CSS, React Flow (DAG), Recharts
+(charts), Framer Motion (animations), Zustand (state).
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Project structure
 
 ```
+src/
+├── components/   # Reusable UI pieces (PanelShell, AuditLogStream, etc.)
+├── views/        # Page-level views (WorkflowDAG)
+├── hooks/        # useWebSocket — connection + reconnect + typed events
+├── store/        # dashboardStore.ts — Zustand global state
+├── App.tsx       # Main layout shell
+```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Layout (locked Day 2)
 
 ```
+┌─────────────────────────────────────────┐
+│              Top bar (system status)      │
+├──────────────────────┬────────────────────┤
+│                       │                    │
+│   Workflow DAG (60%)  │  Audit Log (40%)   │
+│                       │                    │
+├───────────────┬───────────────────────────┤
+│ Circuit        │  Sandbox Terminal          │
+│ Breaker Panel  │                            │
+└───────────────┴───────────────────────────┘
+```
+Minimum width: 1280px.
+
+## Status
+
+**Day 1 (complete):**
+- Vite + React + TypeScript + Tailwind scaffold
+- `useWebSocket.ts` — connects to `/ws/stream`, exponential backoff
+  reconnect (capped 30s), typed message parsing, 500-event in-memory cap
+- `dashboardStore.ts` — Zustand store: workers, auditLog, circuitBreakers,
+  throughput, currentView
+- `App.tsx` renders React Flow canvas
+
+**Day 2 (complete):**
+- Full layout shell locked: top bar, 60/40 left-right split
+  (Workflow DAG / Audit Log Stream), 20%-height bottom row
+  (Circuit Breaker Panel / Sandbox Terminal)
+- `PanelShell.tsx` — shared wrapper component (title bar + scrollable body)
+  used by all panel components
+- Placeholder components for Audit Log Stream, Circuit Breaker Panel,
+  Sandbox Terminal — each stubbed with a "wired on Day N" placeholder,
+  real data wiring lands as backend WebSocket events become available
+- Custom color palette (`--status-*` CSS vars) matching master doc
+  Section 11.3: healthy/suspected/remediating/escalated/verifying/fallback
+
+**Not yet wired (pending backend integration):**
+- Live WebSocket data flowing into components (backend `/ws/stream`
+  exists and is tested — dashboard-side consumption lands as each view
+  is built out)
+- Workflow DAG node/edge rendering (currently empty canvas)
+- 'Break It' button (Day 7)
