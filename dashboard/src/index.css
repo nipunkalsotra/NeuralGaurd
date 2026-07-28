@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    background-color: theme(--color-slate-950);
+    color: theme(--color-slate-100);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Section 11.3 palette — hardcoded hex, matches Tailwind's default emerald/amber/etc scale */
+:root {
+  --status-healthy: #10b981;
+  --status-suspected: #fbbf24;
+  --status-remediating: #f97316;
+  --status-escalated: #f43f5e;
+  --status-verifying: #8b5cf6;
+  --status-fallback: #facc15;
+}
