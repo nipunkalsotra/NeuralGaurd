@@ -1,118 +1,73 @@
 // src/views/HealthIndicators.tsx
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import PanelShell from "../components/PanelShell";
-import { useWebSocket } from "../hooks/useWebSocket";
+import { useDashboardStore, type AgentId } from "../store/dashboardStore";
+import type { WorkerState } from "../components/AgentOrb";
 
-type LoopStatus = "HEALTHY" | "LOOP_SUSPECTED" | "LOOP_DETECTED";
-
-interface LoopEvent {
-  type: "loop_detection";
-  payload: {
-    worker_id: string;
-    similarity: number;
-    status: LoopStatus;
-    timestamp: string;
-    fallback_used: boolean;
-  };
-}
-
-const STATUS_STYLES: Record<LoopStatus, string> = {
-  HEALTHY: "border-l-emerald-500 bg-emerald-500/5",
-  LOOP_SUSPECTED: "border-l-amber-400 bg-amber-400/5",
-  LOOP_DETECTED: "border-l-rose-500 bg-rose-500/5",
+const STATUS_COLOR: Record<WorkerState, string> = {
+  HEALTHY: "16,185,129",
+  LOOP_SUSPECTED: "251,191,36",
+  DIAGNOSING: "96,165,250",
+  REMEDIATING: "249,115,22",
+  VERIFYING: "139,92,246",
+  ESCALATED: "244,63,94",
+  RESUMED: "16,185,129",
 };
 
-const STATUS_BADGE: Record<LoopStatus, string> = {
-  HEALTHY: "bg-emerald-500/20 text-emerald-400",
-  LOOP_SUSPECTED: "bg-amber-400/20 text-amber-300",
-  LOOP_DETECTED: "bg-rose-500/20 text-rose-400",
+const AGENT_ORDER: AgentId[] = ["sentinel", "triage", "remediation", "optimization", "orchestrator"];
+
+const LABELS: Record<AgentId, string> = {
+  sentinel: "Sentinel",
+  triage: "Triage",
+  remediation: "Remediation",
+  optimization: "Optimization",
+  orchestrator: "Orchestrator",
 };
 
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("en-GB");
-}
+function StatusCard({ id }: { id: AgentId }) {
+  const agent = useDashboardStore((s) => s.agents[id]);
+  const rgb = STATUS_COLOR[agent.state];
 
-const Row = memo(function Row({ event }: { event: LoopEvent["payload"] }) {
   return (
-    <div className={`border-l-4 px-3 py-2 ${STATUS_STYLES[event.status]}`}>
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-xs text-slate-400 w-20 shrink-0">
-          {formatTime(event.timestamp)}
-        </span>
-        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0 ${STATUS_BADGE[event.status]}`}>
-          {event.status}
-        </span>
-        <span className="text-xs text-slate-300 truncate">
-          {event.worker_id} · similarity {event.similarity.toFixed(2)}
-          {event.fallback_used ? " · fallback" : ""}
-        </span>
-      </div>
+    <div className="flex flex-col items-center gap-2 p-4 rounded-lg bg-slate-900/40 border border-slate-800">
+      <motion.div
+        key={agent.state}
+        initial={{ scale: 1 }}
+        animate={{ scale: [1, 1.1, 1] }}
+        transition={{ duration: 0.4 }}
+        className="w-14 h-14 rounded-full bg-slate-900 border border-slate-700"
+        style={{
+          boxShadow: `0 0 16px rgba(${rgb},0.4), 0 0 32px rgba(${rgb},0.25)`,
+        }}
+      />
+      <span className="text-xs font-medium text-slate-300">{LABELS[id]}</span>
+      <span className="text-[10px] uppercase tracking-wider text-slate-500">{agent.state}</span>
+
+      {agent.fallbackActive && (
+        <motion.span
+          className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-400/20 text-yellow-300 border border-yellow-400/50"
+          animate={{
+            boxShadow: [
+              "0 0 4px rgba(250,204,21,0.4)",
+              "0 0 12px rgba(250,204,21,0.7)",
+              "0 0 4px rgba(250,204,21,0.4)",
+            ],
+          }}
+          transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+        >
+          fallback
+        </motion.span>
+      )}
     </div>
   );
-});
-
-interface HealthIndicatorsProps {
-  wsUrl?: string;
 }
 
-export default function HealthIndicators({ wsUrl }: HealthIndicatorsProps) {
-  const [events, setEvents] = useState<LoopEvent["payload"][]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const mockRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const startMock = useCallback(() => {
-    if (mockRef.current) return;
-    let tick = 0;
-    mockRef.current = setInterval(() => {
-      tick += 1;
-      const worker = `worker-${(tick % 3) + 1}`;
-      const spiking = worker === "worker-3" && tick % 10 >= 6 && tick % 10 <= 8;
-      const similarity = spiking ? 0.93 + Math.random() * 0.05 : 0.3 + Math.random() * 0.3;
-      const status: LoopStatus =
-        similarity > 0.92 ? (tick % 10 === 8 ? "LOOP_DETECTED" : "LOOP_SUSPECTED") : "HEALTHY";
-
-      setEvents((prev) =>
-        [
-          ...prev,
-          {
-            worker_id: worker,
-            similarity,
-            status,
-            timestamp: new Date().toISOString(),
-            fallback_used: Math.random() < 0.1,
-          },
-        ].slice(-100)
-      );
-    }, 1200);
-  }, []);
-
-  const handleMessage = useCallback((msg: LoopEvent) => {
-    if (msg.type !== "loop_detection") return;
-    setEvents((prev) => [...prev, msg.payload].slice(-100));
-  }, []);
-
-  useWebSocket<LoopEvent>({ url: wsUrl, onMessage: handleMessage, mockFallback: startMock });
-
-  useEffect(() => {
-    return () => {
-      if (mockRef.current) clearInterval(mockRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [events]);
-
+export default function HealthIndicators() {
   return (
-    <PanelShell title="Loop Detection Stream">
-      <div ref={scrollRef} className="h-full overflow-y-auto divide-y divide-slate-800/50">
-        {events.length === 0 && (
-          <div className="flex items-center justify-center h-full text-slate-600 text-sm">
-            Monitoring workers...
-          </div>
-        )}
-        {events.map((e, i) => (
-          <Row key={i} event={e} />
+    <PanelShell title="Health Indicators">
+      <div className="grid grid-cols-5 gap-3 p-4 h-full items-center">
+        {AGENT_ORDER.map((id) => (
+          <StatusCard key={id} id={id} />
         ))}
       </div>
     </PanelShell>
