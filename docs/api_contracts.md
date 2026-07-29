@@ -129,3 +129,30 @@ verified against real dashboard code once UI work resumes.
 - DEFERRED (UI phase): Health Indicators UI, 'Break It' button, WebSocket
   streaming of fault events to dashboard. Backend fault injection API is
   fully functional and ready for Tushar to wire up once UI work resumes.
+
+## Day 8 Status (Rashi, UI portion)
+- Audit Log Stream UI: color-coding, expand-to-JSON, auto-scroll all
+  confirmed working via mock data generator (real backend->UI wiring
+  pending Day 9-10, since /demo/inject doesn't yet call Sentinel/
+  Orchestrator directly — see integration gap noted after Day 7).
+- Color scheme uses to_state-based mapping (existing implementation),
+  functionally equivalent to today's spec's transition-pair mapping —
+  no code change needed, same colors produced for every real transition.
+- Hash chain integrity: backend verify_chain() tested (Day 3). Client-side
+  chain display (verifyHashChain() in AuditLogStream.tsx) does structural
+  validation only (not full crypto recompute, per its own code comment) —
+  acceptable for a visual indicator, documented as intentional limitation.
+- Joint auto-fallback UI test with Shreshtha: DEFERRED to Day 9-10
+  integration, since it requires the fault-injection-to-Orchestrator
+  wiring that doesn't exist yet.
+
+## Day 8 — Fallback Chain Test Summary
+| Chain | Status |
+|---|---|
+| Sentinel: NIM -> sentence-transformers -> hash | ✅ Tested |
+| Triage: Nemotron -> Groq (+JSON repair) -> heuristic | ✅ Tested |
+| Optimization: OR-Tools -> greedy round-robin | ✅ Tested (cuOpt skipped, see Day 4-5 note) |
+| Remediation: wrapper timeout -> flagged mock, no crash | ✅ Tested |
+| Orchestrator: nvidia-nat -> asyncio | N/A — nvidia-nat never integrated |
+
+Mock wrapper stress test: 20 concurrent requests, 0 errors, 2.05s total — confirms genuine parallelism (not serialized, given each request includes a 2s simulated delay)
