@@ -1,7 +1,6 @@
+# backend/api/main.py
 """
 main.py
-Day 2 — Shreshtha (Person 3)
-
 Backend FastAPI scaffold. Port 8000. This is YOUR port — no other
 service (wrapper=8081, dashboard=3000) uses it.
 
@@ -20,6 +19,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.health import router as health_router
 from api.websocket import router as websocket_router
 from api.fault_injection import router as fault_injection_router
+from api.circuit_status import router as circuit_status_router
+from api.stream_relay import router as stream_relay_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sentinel.main")
@@ -33,6 +34,8 @@ app = FastAPI(
 # CORS — dashboard runs on port 3000 (Vite dev server). Allow it explicitly
 # rather than wildcard, since we'll eventually need credentials/websockets
 # to behave predictably across machines (Person 1 connects remotely too).
+# NOTE: origins must NOT have a trailing slash — browsers send the Origin
+# header without one, and allow_origins does exact string matching.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -49,6 +52,9 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(websocket_router)
 app.include_router(fault_injection_router)
+app.include_router(circuit_status_router)
+app.include_router(stream_relay_router)
+
 
 @app.on_event("startup")
 async def on_startup() -> None:
