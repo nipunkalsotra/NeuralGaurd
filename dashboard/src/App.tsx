@@ -58,7 +58,7 @@ export default function App() {
             onClick={() => setShowHealthIndicators((v) => !v)}
             className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
           >
-            {showHealthIndicators ? "Hide" : "Show"} Loop Detection Stream
+            {showHealthIndicators ? "Hide" : "Show"} Health Indicators
           </button>
         </div>
       </header>
@@ -82,8 +82,8 @@ export default function App() {
       )}
 
       {showHealthIndicators && (
-        <div className="absolute bottom-[20%] right-0 w-[40%] h-[300px] z-30 border-t border-l border-slate-700">
-          <HealthIndicators wsUrl={BACKEND_WS_URL} />
+        <div className="absolute top-14 left-0 w-full h-[140px] z-30 border-b border-slate-700">
+          <HealthIndicators />
         </div>
       )}
 
