@@ -114,6 +114,8 @@ The Day 2 `websocket.py` router skeleton (`route_message`) currently dispatches 
 
 ## 7. Sign-off
 
-- [ ] Shared with Tushar in standup — Day 3
-- [ ] Tushar acknowledges he can build Triage Report Card / Sandbox Terminal / Audit Log Stream against this shape
-- [ ] Locked (no breaking changes without team sync) — target Day 7
+- [x] Shared with Tushar in standup — Day 3
+- [x] Tushar acknowledges he can build Triage Report Card / Sandbox Terminal / Audit Log Stream against this shape
+- [x] Locked (no breaking changes without team sync) — Day 7, confirmed 2026-07-28
+
+**Status: LOCKED — Day 7 ✅**
