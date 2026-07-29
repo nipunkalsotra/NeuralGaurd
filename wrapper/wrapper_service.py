@@ -1,4 +1,3 @@
-# wrapper/wrapper_service.py
 """
 NemoClaw Wrapper — thin FastAPI app that mode-switches between mock and real.
 """
@@ -19,6 +18,7 @@ NEMOCLAW_MODE = os.getenv("NEMOCLAW_MODE", "mock")
 class RemediateRequest(BaseModel):
     patch: str
     test_fixture: str
+    worker_id: str = "worker-unknown"
 
 
 class RemediateResponse(BaseModel):
@@ -34,18 +34,15 @@ def status():
     return {"status": "ok", "mode": NEMOCLAW_MODE}
 
 
-# wrapper/wrapper_service.py
-# Update the /v1/remediate endpoint's nemoclaw branch
-
 @app.post("/v1/remediate", response_model=RemediateResponse)
 async def remediate(request: RemediateRequest):
     if NEMOCLAW_MODE == "nemoclaw":
         try:
-            result = await nemoclaw_remediate(request.patch, request.test_fixture)
+            result = await nemoclaw_remediate(
+                request.patch, request.test_fixture, worker_id=request.worker_id
+            )
             return RemediateResponse(**result)
         except Exception as e:
-            # Day 5: log and fall through to mock for now.
-            # Day 8: full auto-fallback logic with specific reason codes lands here.
             print(f"[wrapper] nemoclaw_remediate failed: {e}")
             result = await mock_remediate(
                 request.patch, request.test_fixture,
@@ -53,9 +50,5 @@ async def remediate(request: RemediateRequest):
             )
             return RemediateResponse(**result)
 
-    result = await mock_remediate(request.patch, request.test_fixture)
-    return RemediateResponse(**result)
-
-    # mock mode (default)
     result = await mock_remediate(request.patch, request.test_fixture)
     return RemediateResponse(**result)
