@@ -3,6 +3,9 @@
 Fault Injection Backend — POST /demo/inject
 Day 7: 4 fault types, each designed to trigger Sentinel's loop detection
 within 3 steps, feeding into the real Orchestrator/Triage/Remediation chain.
+Day 8: Wired to actually drive real Sentinel detect_loop() and broadcast
+the resulting state_change over WebSocket — closes the gap where fault
+injection only set backend state without triggering real detection.
 """
 
 import logging
@@ -12,11 +15,19 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from api.websocket import broadcast_state_change
+from sentinel.agents.sentinel_agent import SentinelAgent
+
 logger = logging.getLogger("sentinel.fault_injection")
 router = APIRouter()
 
 # In-memory worker fault state — Day 7 scope, no persistence needed
 _worker_faults: dict = {}
+
+# Shared Sentinel instance for driving real detection from injected faults.
+# Simple module-level singleton — matches the project's "don't
+# over-engineer Phase 1" philosophy rather than full dependency injection.
+_sentinel = SentinelAgent()
 
 
 class InjectRequest(BaseModel):
@@ -107,10 +118,35 @@ async def inject_fault(request: InjectRequest):
     result = handler.apply(request.target, request.payload or {})
     logger.info("Fault injected: %s on %s -> %s", request.fault_type, request.target, result)
 
+    # Drive real Sentinel detection — simulate the worker repeating the
+    # fault-induced error 4x (matches the pattern in test_fault_injection.py)
+    fault = get_worker_fault(request.target)
+    loop_event = None
+    if fault:
+        error_text = (
+            fault.get("removed_field")
+            or fault.get("forced_error")
+            or fault.get("type")
+        )
+        for _ in range(4):
+            loop_event = _sentinel.detect_loop(
+                request.target,
+                f"Error: {error_text} (fault: {fault['type']})",
+                fault["error_signature"],
+            )
+
+        if loop_event:
+            await broadcast_state_change(
+                worker_id=request.target,
+                from_state="HEALTHY",
+                to_state="LOOP_SUSPECTED",
+                trigger_event="LOOP_SUSPECTED",
+            )
+
     return InjectResponse(
         injected=True,
         target=request.target,
         fault_type=request.fault_type,
         timestamp=datetime.now(timezone.utc).isoformat(),
-        details=result,
+        details={**result, "loop_detected": loop_event is not None},
     )

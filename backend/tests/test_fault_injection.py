@@ -70,3 +70,22 @@ def test_schema_corruption_fault_detected_by_sentinel_within_3_steps(mock_st):
 
     assert result is not None
     assert result["worker_id"] == "worker-test"
+
+# backend/tests/test_fault_injection.py — add this
+
+def test_inject_fault_drives_real_sentinel_detection():
+    """Confirms /demo/inject now actually triggers loop detection,
+    not just fault state — the Day 8 integration gap."""
+    from fastapi.testclient import TestClient
+    from api.main import app
+
+    client = TestClient(app)
+    response = client.post("/demo/inject", json={
+        "target": "worker-integration-test",
+        "fault_type": "schema_corruption",
+        "payload": {"field": "Tax_ID"},
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["injected"] is True
+    assert data["details"]["loop_detected"] is True
