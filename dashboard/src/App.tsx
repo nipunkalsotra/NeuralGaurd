@@ -23,11 +23,36 @@ const MOCK_DIAGNOSIS_FALLBACK: DiagnosisResult = {
 };
 
 const BACKEND_WS_URL = import.meta.env.VITE_WS_URL as string | undefined;
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 export default function App() {
   const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(null);
   const [showSimilarity, setShowSimilarity] = useState(false);
   const [showHealthIndicators, setShowHealthIndicators] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [breakItDisabled, setBreakItDisabled] = useState(false);
+
+  const handleBreakIt = async () => {
+    setBreakItDisabled(true);
+    setToast("Injecting schema change... Tax_ID removed.");
+    setTimeout(() => setToast(null), 3000);
+
+    try {
+      await fetch(`${BACKEND_URL}/demo/inject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: "worker-3",
+          fault_type: "schema_corruption",
+          payload: { field: "Tax_ID" },
+        }),
+      });
+    } catch (e) {
+      console.error("Fault injection failed:", e);
+    }
+
+    setTimeout(() => setBreakItDisabled(false), 5000);
+  };
 
   return (
     <div className="relative min-w-[1280px] h-screen w-screen overflow-x-auto bg-gradient-to-b from-slate-900 to-slate-950 flex flex-col">
@@ -60,6 +85,15 @@ export default function App() {
           >
             {showHealthIndicators ? "Hide" : "Show"} Health Indicators
           </button>
+          <button
+            onClick={handleBreakIt}
+            disabled={breakItDisabled}
+            className={`w-[160px] h-[56px] rounded-lg font-bold text-white text-sm tracking-wide transition-all active:scale-95 ${
+              breakItDisabled ? "bg-rose-900/50 cursor-not-allowed opacity-60" : "bg-rose-600 hover:bg-rose-700"
+            }`}
+          >
+            BREAK IT
+          </button>
         </div>
       </header>
 
@@ -72,7 +106,7 @@ export default function App() {
 
       <div className="h-[20%] min-h-[160px] shrink-0 border-t border-slate-800 grid grid-cols-2">
         <CircuitBreakerPanel />
-        <SandboxTerminal />
+        <SandboxTerminal wsUrl={BACKEND_WS_URL} />
       </div>
 
       {showSimilarity && (
@@ -84,6 +118,12 @@ export default function App() {
       {showHealthIndicators && (
         <div className="absolute top-14 left-0 w-full h-[140px] z-30 border-b border-slate-700">
           <HealthIndicators />
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed top-16 right-4 z-[70] bg-amber-500 text-amber-950 px-4 py-2 rounded-md text-sm font-semibold shadow-lg">
+          {toast}
         </div>
       )}
 

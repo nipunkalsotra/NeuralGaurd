@@ -30,11 +30,17 @@ const STATUS_CONFIG: Record<CBStatus, { dot: string; label: string; pulse: boole
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const POLL_INTERVAL_MS = 2000;
 
-// cuOpt is intentionally never called (API access unresolved, OR-Tools is
-// the practical primary solver — see docs/api_contracts.md Day 4-5 note).
-// Force it red rather than showing a misleading "Operational" green for a
-// service that was never actually exercised.
 const CUOPT_SKIPPED_REASON = "Skipped — API access unresolved, OR-Tools is primary solver";
+
+// Backend returns uppercase/underscore status strings (CLOSED, OPEN,
+// HALF_OPEN) from CircuitBreaker.get_status(). Normalize to the
+// lowercase/hyphenated CBStatus type this component uses, with a safe
+// fallback for anything unexpected so a mismatch can never crash the app.
+function normalizeStatus(raw: string): CBStatus {
+  const s = raw.toLowerCase().replace(/_/g, "-");
+  if (s === "closed" || s === "open" || s === "half-open") return s;
+  return "closed";
+}
 
 function applyCuOptOverride(services: ServiceStatus[]): ServiceStatus[] {
   return services.map((s) =>
@@ -56,7 +62,7 @@ const MOCK_SERVICES: ServiceStatus[] = applyCuOptOverride(
 function timeAgo(iso: string | null): string {
   if (!iso) return "never";
   const parsed = new Date(iso);
-  if (isNaN(parsed.getTime())) return iso; // non-timestamp reason string (e.g. cuOpt override)
+  if (isNaN(parsed.getTime())) return iso;
   const diffMs = Date.now() - parsed.getTime();
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return "just now";
@@ -74,7 +80,7 @@ function ServiceCard({
   onSelect: () => void;
 }) {
   const Icon = SERVICE_ICONS[data.service] ?? Cpu;
-  const cfg = STATUS_CONFIG[data.status];
+  const cfg = STATUS_CONFIG[data.status] ?? STATUS_CONFIG.closed; // defensive fallback
   const [hovered, setHovered] = useState(false);
   const isCuOpt = data.service === "cuOpt";
 
@@ -111,6 +117,7 @@ function ServiceCard({
 
 function DetailModal({ data, onClose }: { data: ServiceStatus; onClose: () => void }) {
   const isCuOpt = data.service === "cuOpt";
+  const cfg = STATUS_CONFIG[data.status] ?? STATUS_CONFIG.closed;
 
   return (
     <motion.div
@@ -135,7 +142,7 @@ function DetailModal({ data, onClose }: { data: ServiceStatus; onClose: () => vo
         </div>
 
         <div className="space-y-2 text-xs text-slate-300">
-          <div>Status: <span className="font-semibold">{isCuOpt ? "Unused" : STATUS_CONFIG[data.status].label}</span></div>
+          <div>Status: <span className="font-semibold">{isCuOpt ? "Unused" : cfg.label}</span></div>
           {isCuOpt ? (
             <div className="text-slate-400">{CUOPT_SKIPPED_REASON}</div>
           ) : (
@@ -169,7 +176,11 @@ export default function CircuitBreakerPanel() {
         const res = await fetch(`${BACKEND_URL}/api/circuit-status`);
         if (!res.ok) throw new Error("bad response");
         const data = await res.json();
-        setServices(applyCuOptOverride(data.services));
+        const normalized: ServiceStatus[] = data.services.map((s: ServiceStatus) => ({
+          ...s,
+          status: normalizeStatus(s.status as unknown as string),
+        }));
+        setServices(applyCuOptOverride(normalized));
         setIsLive(true);
       } catch {
         setIsLive(false);
