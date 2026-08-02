@@ -15,22 +15,23 @@ Opens on `http://localhost:3000`.
 Configured via `.env.local` (gitignored — create your own):
 ```bash
 VITE_WS_URL=ws://localhost:8000/ws/stream
+VITE_BACKEND_URL=http://localhost:8000
 ```
-Defaults to `ws://localhost:8000/ws/stream` if unset. For integration
-testing against a teammate's backend, point this at their LAN IP or
-ngrok URL instead.
+For integration testing against a teammate's backend, point these at
+their LAN IP or ngrok URL instead.
 
 ## Tech stack
 
 React 18 + TypeScript + Vite, Tailwind CSS, React Flow (DAG), Recharts
-(charts), Framer Motion (animations), Zustand (state).
+(charts), Framer Motion (animations), Zustand (state), Lucide (icons).
 
 ## Project structure
 
 ```
 src/
-├── components/   # Reusable UI pieces (PanelShell, AuditLogStream, etc.)
-├── views/        # Page-level views (WorkflowDAG)
+├── components/   # AgentOrb, AuditLogStream, CircuitBreakerPanel,
+│                 # SandboxTerminal, TriageReportCard, PanelShell
+├── views/        # WorkflowDAG, SimilarityGraph, HealthIndicators
 ├── hooks/        # useWebSocket — connection + reconnect + typed events
 ├── store/        # dashboardStore.ts — Zustand global state
 ├── App.tsx       # Main layout shell
@@ -40,7 +41,7 @@ src/
 
 ```
 ┌─────────────────────────────────────────┐
-│              Top bar (system status)      │
+│  Top bar (system status, Break It button) │
 ├──────────────────────┬────────────────────┤
 │                       │                    │
 │   Workflow DAG (60%)  │  Audit Log (40%)   │
@@ -50,33 +51,59 @@ src/
 │ Breaker Panel  │                            │
 └───────────────┴───────────────────────────┘
 ```
-Minimum width: 1280px.
+Minimum width: 1280px. Overlay panels (Similarity Graph, Health
+Indicators) toggle via header buttons.
 
 ## Status
 
-**Day 1 (complete):**
-- Vite + React + TypeScript + Tailwind scaffold
-- `useWebSocket.ts` — connects to `/ws/stream`, exponential backoff
-  reconnect (capped 30s), typed message parsing, 500-event in-memory cap
-- `dashboardStore.ts` — Zustand store: workers, auditLog, circuitBreakers,
-  throughput, currentView
-- `App.tsx` renders React Flow canvas
+**Day 1-2 (complete):** Scaffold, WebSocket client (reconnect + backoff),
+Zustand store, full layout shell, PanelShell shared wrapper.
 
-**Day 2 (complete):**
-- Full layout shell locked: top bar, 60/40 left-right split
-  (Workflow DAG / Audit Log Stream), 20%-height bottom row
-  (Circuit Breaker Panel / Sandbox Terminal)
-- `PanelShell.tsx` — shared wrapper component (title bar + scrollable body)
-  used by all panel components
-- Placeholder components for Audit Log Stream, Circuit Breaker Panel,
-  Sandbox Terminal — each stubbed with a "wired on Day N" placeholder,
-  real data wiring lands as backend WebSocket events become available
-- Custom color palette (`--status-*` CSS vars) matching master doc
-  Section 11.3: healthy/suspected/remediating/escalated/verifying/fallback
+**Day 4-7 (complete):**
+- Workflow DAG — 5 agent orb nodes, click-to-detail panel, animated
+  demo trigger buttons (Full Heal Sequence / Escalation / Reset)
+- Similarity Graph — threshold line at 0.92, red fill above threshold,
+  per-worker lines, mock data fallback
+- Triage Report Card — confidence bar, fix_type badge, fallback pulse
+- Audit Log Stream — filter by agent, hash chain display, auto-scroll +
+  jump-to-new button
+- Health Indicators — 5 per-agent status cards with glowing orbs,
+  pulsing yellow fallback halo
+- Circuit Breaker Panel — 5 service cards, hover tooltip, detail modal,
+  polls `/api/circuit-status` (REST, not WebSocket — no `circuit_breaker`
+  WS type exists in the locked schema)
+- Sandbox Terminal — real-time stdout/stderr, [MOCK MODE] banner
+- Break It button — real POST to `/demo/inject`, toast, 5s cooldown
 
-**Not yet wired (pending backend integration):**
-- Live WebSocket data flowing into components (backend `/ws/stream`
-  exists and is tested — dashboard-side consumption lands as each view
-  is built out)
-- Workflow DAG node/edge rendering (currently empty canvas)
-- 'Break It' button (Day 7)
+**Day 8 (complete):**
+- Agent orb pulse rate now reflects state urgency (2s calm / 1s active /
+  0.5s escalated), continuous not single-flash
+- `docs/animation_timing.md` — locked timing reference for demo script
+
+## Known gaps (honest, going into Day 9+ integration)
+
+- **WebSocket broadcast wiring**: Orchestrator state transitions and
+  Sentinel loop detections don't push to `/ws/stream` yet — only the
+  fault-injection path does. Panels currently show live data only via
+  that path or mock fallback. This is backend work (Nipun/Rashi), not
+  a dashboard bug.
+- **Circuit registry**: exists and is polled correctly, but individual
+  agents' own circuit breakers (Sentinel/Triage/Remediation/Optimization)
+  don't yet report into the shared registry — so real failures won't
+  show up in the panel until that backend wiring lands.
+- **Post-Heal Report Card**: not built (Day 12 per plan).
+- **Workflow DAG traveling-dot edge animation, spring throughput
+  counter, confetti**: not implemented — documented in
+  `animation_timing.md`, deferred as polish.
+- **Accessibility (WCAG) pass**: not done.
+- **cuOpt**: intentionally shown as red/"Unused" in Circuit Breaker
+  Panel — API access was never confirmed working for this project,
+  OR-Tools is the practical primary solver (see backend
+  `docs/api_contracts.md`).
+
+## Next up: Day 9-10 (team integration)
+
+All 4 connect simultaneously to Shreshtha's backend. This is where the
+WebSocket/circuit-registry wiring gaps above get closed, contract
+formats get cross-checked, and the dashboard gets its first real
+multi-machine test.

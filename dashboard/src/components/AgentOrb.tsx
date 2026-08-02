@@ -22,6 +22,18 @@ const STATE_COLOR: Record<WorkerState, string> = {
   RESUMED: "16,185,129",
 };
 
+// Pulse rate reflects urgency, per Day 8 animation timing spec:
+// calm states pulse slowly, active states pulse faster, escalated is urgent.
+const PULSE_DURATION: Record<WorkerState, number> = {
+  HEALTHY: 2,
+  RESUMED: 2,
+  LOOP_SUSPECTED: 1,
+  DIAGNOSING: 1,
+  REMEDIATING: 1,
+  VERIFYING: 1,
+  ESCALATED: 0.5,
+};
+
 export interface AgentOrbData {
   label: string;
   state: WorkerState;
@@ -35,6 +47,7 @@ interface AgentOrbNodeProps {
 
 function AgentOrbNode({ data }: AgentOrbNodeProps) {
   const rgb = STATE_COLOR[data.state];
+  const duration = PULSE_DURATION[data.state];
 
   return (
     <div className="flex flex-col items-center gap-1.5" onClick={data.onSelect}>
@@ -51,7 +64,7 @@ function AgentOrbNode({ data }: AgentOrbNodeProps) {
         key={data.state}
         initial={{ scale: 1 }}
         animate={{ scale: [1, 1.15, 1] }}
-        transition={{ duration: 0.4 }}
+        transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
         className="w-20 h-20 rounded-full cursor-pointer bg-slate-900 border border-slate-700"
         style={{
           boxShadow: `0 0 20px rgba(${rgb},0.3), 0 0 40px rgba(${rgb},0.3), 0 0 60px rgba(${rgb},0.3)`,
