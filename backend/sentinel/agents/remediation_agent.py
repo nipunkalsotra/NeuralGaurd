@@ -12,6 +12,7 @@ import os
 import httpx
 
 from sentinel.fallback.circuit_breaker import CircuitBreaker
+from sentinel.fallback.circuit_breaker import circuit_registry
 
 logger = logging.getLogger("sentinel.remediation_agent")
 
@@ -69,26 +70,17 @@ class RemediationAgent:
                 response.raise_for_status()
                 result = response.json()
                 self.circuit_breaker.record_success()
+                circuit_registry.get("NemoClaw").record_success()  # NEW
                 return result
 
         except httpx.TimeoutException:
             logger.error("Wrapper call timed out after 30s")
             self.circuit_breaker.record_failure()
-            return {
-                "verified": False,
-                "output": "Wrapper call timed out",
-                "sandbox_log": "",
-                "mode": "timeout",
-                "flagged": True,
-            }
+            circuit_registry.get("NemoClaw").record_failure(reason="timeout")  # NEW
+            return {...}
 
         except Exception as e:
             logger.error("Wrapper call failed: %s", e)
             self.circuit_breaker.record_failure()
-            return {
-                "verified": False,
-                "output": f"Wrapper call failed: {e}",
-                "sandbox_log": "",
-                "mode": "error",
-                "flagged": True,
-            }
+            circuit_registry.get("NemoClaw").record_failure(reason=str(e))  # NEW
+            return {...}

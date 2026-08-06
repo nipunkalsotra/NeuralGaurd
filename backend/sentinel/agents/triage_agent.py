@@ -16,6 +16,7 @@ import httpx
 
 from sentinel.cache.diagnosis_cache import DiagnosisCache
 from sentinel.fallback.circuit_breaker import CircuitBreaker
+from sentinel.fallback.circuit_breaker import circuit_registry
 from sentinel.fallback.json_repair import repair_json
 
 
@@ -192,22 +193,25 @@ Return ONLY valid JSON in this exact format, no other text:
                 result = repair_json(raw)
                 result["fallback_used"] = False
                 self.circuit_breaker.record_success()
+                circuit_registry.get("Nemotron").record_success()  # NEW
                 self.diagnosis_cache.set(cache_key, result, fallback_origin="nemotron")
                 return result
             except Exception as e:
                 print(f"[TriageAgent] Nemotron failed, falling back to Groq: {e}")
                 self.circuit_breaker.record_failure()
+                circuit_registry.get("Nemotron").record_failure(reason=str(e))  # NEW
 
-        # Fallback 1: Groq
         try:
             raw = self.groq_client.chat(prompt)
             result = repair_json(raw)
             result["fallback_used"] = True
             result["fallback_origin"] = "groq"
+            circuit_registry.get("Groq").record_success()  # NEW
             self.diagnosis_cache.set(cache_key, result, fallback_origin="groq")
             return result
         except Exception as e:
             print(f"[TriageAgent] Groq failed too, using rule-based heuristic: {e}")
+            circuit_registry.get("Groq").record_failure(reason=str(e))  # NEW
 
         # Fallback 2 (last resort): rule-based heuristic — zero API cost, always works
         result = self.rule_based_heuristic.classify(log_lines)

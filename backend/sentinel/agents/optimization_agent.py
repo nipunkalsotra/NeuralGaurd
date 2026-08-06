@@ -14,6 +14,7 @@ from typing import Dict, List
 from ortools.linear_solver import pywraplp
 
 from sentinel.fallback.circuit_breaker import CircuitBreaker
+from sentinel.fallback.circuit_breaker import circuit_registry
 
 logger = logging.getLogger("sentinel.optimization_agent")
 
@@ -136,18 +137,16 @@ class OptimizationAgent:
         }
 
     def solve(self, problem: dict) -> dict:
-        """
-        Fallback chain (cuOpt SKIPPED — API access unresolved):
-        OR-Tools (practical primary, circuit-breaker protected) -> greedy round-robin.
-        """
         if self.circuit_breaker.is_closed():
             try:
                 result = self.solve_with_or_tools(problem)
                 self.circuit_breaker.record_success()
+                circuit_registry.get("cuOpt").record_success()  # NEW — see note below
                 return result
             except Exception as e:
                 logger.warning("OR-Tools failed, falling back to greedy round-robin: %s", e)
                 self.circuit_breaker.record_failure()
+                circuit_registry.get("cuOpt").record_failure(reason=str(e))  # NEW
         else:
             logger.info("OR-Tools circuit breaker open — using greedy round-robin")
 

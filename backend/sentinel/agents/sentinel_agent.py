@@ -16,6 +16,7 @@ import httpx
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
+from sentinel.fallback.circuit_breaker import circuit_registry
 from sentinel.fallback.circuit_breaker import CircuitBreaker
 from sentinel.cache.embedding_cache import EmbeddingCache
 
@@ -82,10 +83,12 @@ class SentinelAgent:
                 embedding = self.nim_client.embed(output_text)
                 self.embedding_cache.set(cache_key, embedding, fallback_origin="NIM")
                 self.circuit_breaker.record_success()
+                circuit_registry.get("NIM").record_success()  # NEW
                 return embedding
             except Exception as e:
                 print(f"[SentinelAgent] NIM embed failed, falling back: {e}")
                 self.circuit_breaker.record_failure()
+                circuit_registry.get("NIM").record_failure(reason=str(e))  # NEW
 
         try:
             embedding = self.local_embedder.encode(output_text).tolist()
