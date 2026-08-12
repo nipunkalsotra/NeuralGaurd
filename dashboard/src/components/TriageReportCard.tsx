@@ -2,11 +2,23 @@
 import { useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-export type FixType = "SCHEMA_MISMATCH" | "TYPE_ERROR" | "MISSING_FIELD" | "UNKNOWN";
+// Day 10 fix: this union previously listed MISSING_FIELD/UNKNOWN, which
+// the backend never actually produces — TriageAgent's real enum (both the
+// Nemotron/Groq prompt constraint and the rule-based heuristic's PATTERNS)
+// is exactly this set. A mismatch here meant FIX_TYPE_STYLES[fix_type]
+// would silently miss on real data (see the fallback style below for
+// defense-in-depth against any future/unexpected value regardless).
+export type FixType =
+  | "SCHEMA_MISMATCH"
+  | "TYPE_ERROR"
+  | "MISSING_IMPORT"
+  | "TIMEOUT"
+  | "CONNECTION_ERROR"
+  | "RESOURCE_ERROR";
 
 export interface DiagnosisResult {
   root_cause: string;
-  fix_type: FixType;
+  fix_type: string; // widened from FixType — real data isn't statically guaranteed to match; see FIX_TYPE_STYLES' fallback below
   affected_field: string;
   confidence: number | null | undefined; // 0.0 - 1.0 — real backend can omit this if Groq's JSON repair layer produces a malformed/incomplete diagnosis
   fallback_used: boolean;
@@ -23,11 +35,15 @@ interface TriageReportCardProps {
   onClose: () => void;
 }
 
+const DEFAULT_FIX_TYPE_STYLE = "bg-gray-500/20 text-gray-400 border-gray-500/40";
+
 const FIX_TYPE_STYLES: Record<FixType, string> = {
   SCHEMA_MISMATCH: "bg-orange-500/20 text-orange-400 border-orange-500/40",
   TYPE_ERROR: "bg-blue-500/20 text-blue-400 border-blue-500/40",
-  MISSING_FIELD: "bg-purple-500/20 text-purple-400 border-purple-500/40",
-  UNKNOWN: "bg-gray-500/20 text-gray-400 border-gray-500/40",
+  MISSING_IMPORT: "bg-purple-500/20 text-purple-400 border-purple-500/40",
+  TIMEOUT: "bg-amber-500/20 text-amber-400 border-amber-500/40",
+  CONNECTION_ERROR: "bg-rose-500/20 text-rose-400 border-rose-500/40",
+  RESOURCE_ERROR: "bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40",
 };
 
 function confidenceColor(confidence: number) {
@@ -105,7 +121,9 @@ export default function TriageReportCard({ diagnosis, onClose }: TriageReportCar
 
             <div className="flex items-center gap-3 px-6 pt-4 flex-wrap">
               <span
-                className={`px-3 py-1 rounded-full text-xs font-semibold border ${FIX_TYPE_STYLES[diagnosis.fix_type]}`}
+                className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                  FIX_TYPE_STYLES[diagnosis.fix_type as FixType] ?? DEFAULT_FIX_TYPE_STYLE
+                }`}
               >
                 {diagnosis.fix_type}
               </span>

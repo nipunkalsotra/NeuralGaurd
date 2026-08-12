@@ -89,9 +89,20 @@ Parsed shape (after `JSON.parse(payload)`):
 
 ### `audit_event`
 ```json
-"{\"from_state\": \"HEALTHY\", \"to_state\": \"LOOP_SUSPECTED\", \"trigger_event\": \"LOOP_SUSPECTED\", \"agent_name\": \"SentinelAgent\", \"confidence_score\": null, \"fallback_used\": false, \"fallback_origin\": null, \"previous_hash\": \"a1b2...\", \"current_hash\": \"c3d4...\"}"
+"{\"from_state\": \"HEALTHY\", \"to_state\": \"LOOP_SUSPECTED\", \"trigger_event\": \"LOOP_SUSPECTED\", \"agent_name\": \"SentinelAgent\", \"confidence_score\": null, \"fallback_used\": false, \"fallback_origin\": null, \"root_cause\": null, \"fix_type\": null, \"affected_field\": null, \"previous_hash\": \"a1b2...\", \"current_hash\": \"c3d4...\"}"
 ```
 Mirrors the audit log record structure defined in the master doc §5.3 — same field names, so Tushar can reuse one type definition for both the live stream and any historical audit log fetch.
+
+**Day 10 addition (additive, non-breaking):** `root_cause`, `fix_type`,
+`affected_field` — null on every transition except the one into
+`REMEDIATING` or `ESCALATED` (where Triage's diagnosis actually exists).
+This closes a real gap found during team-wide integration: the Triage
+Report Card only ever opened from two manual demo buttons, never from
+live backend data, because no broadcast carried the full diagnosis.
+Reusing the already-broadcast `audit_event` for the DIAGNOSING→REMEDIATING
+transition (rather than inventing a new locked `type`) keeps this
+backward-compatible — old clients that don't read these three new keys
+are unaffected.
 
 ---
 

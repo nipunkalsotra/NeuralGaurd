@@ -11,7 +11,7 @@ import { useDashboardStore, type AgentId } from "./store/dashboardStore";
 import { useWebSocket } from "./hooks/useWebSocket";
 import type { WorkerState } from "./components/AgentOrb";
 
-interface StateChangeEnvelope {
+interface WsEnvelope {
   type: string;
   payload: string;
 }
@@ -20,6 +20,21 @@ interface StateChangePayload {
   from_state: WorkerState;
   to_state: WorkerState;
   trigger_event: string;
+}
+
+// Day 10: audit_event payloads carry the same shape as AuditLogStream's
+// AuditLogPayload — root_cause/fix_type/affected_field are non-null only
+// on the transition into REMEDIATING/ESCALATED (see backend/sentinel/
+// agents/orchestrator.py's on_diagnosis_complete). Only the fields this
+// component actually needs are declared here.
+interface AuditEventPayload {
+  agent_name: string;
+  confidence_score: number | null;
+  fallback_used: boolean;
+  fallback_origin: string | null;
+  root_cause?: string | null;
+  fix_type?: string | null;
+  affected_field?: string | null;
 }
 
 // Maps a real FSM to_state (per the locked docs/websocket_schema.md
@@ -76,27 +91,51 @@ export default function App() {
   const setAgentState = useDashboardStore((s) => s.setAgentState);
   const setActiveEdge = useDashboardStore((s) => s.setActiveEdge);
 
-  const handleStateChange = useCallback(
-    (msg: StateChangeEnvelope) => {
-      if (msg.type !== "state_change") return;
-      try {
-        const { to_state, trigger_event } = JSON.parse(msg.payload) as StateChangePayload;
-        const agents = STATE_TO_AGENTS[to_state];
-        if (!agents) return;
-        agents.forEach((agent) => setAgentState(agent, to_state, trigger_event));
-        setActiveEdge(STATE_TO_EDGE[to_state]);
-      } catch {
-        console.warn("Malformed state_change payload, ignoring:", msg.payload);
+  const handleWsMessage = useCallback(
+    (msg: WsEnvelope) => {
+      if (msg.type === "state_change") {
+        try {
+          const { to_state, trigger_event } = JSON.parse(msg.payload) as StateChangePayload;
+          const agents = STATE_TO_AGENTS[to_state];
+          if (!agents) return;
+          agents.forEach((agent) => setAgentState(agent, to_state, trigger_event));
+          setActiveEdge(STATE_TO_EDGE[to_state]);
+        } catch {
+          console.warn("Malformed state_change payload, ignoring:", msg.payload);
+        }
+        return;
+      }
+
+      if (msg.type === "audit_event") {
+        try {
+          const record = JSON.parse(msg.payload) as AuditEventPayload;
+          // Only DIAGNOSING->REMEDIATING/ESCALATED carries a real diagnosis
+          // (root_cause is null on every other transition) — this is the
+          // live-data equivalent of the two manual "Show Mock Triage Card"
+          // buttons, opening on the same DiagnosisResult shape.
+          if (!record.root_cause) return;
+          setDiagnosis({
+            root_cause: record.root_cause,
+            fix_type: record.fix_type ?? "SCHEMA_MISMATCH",
+            affected_field: record.affected_field ?? "unknown",
+            confidence: record.confidence_score,
+            fallback_used: record.fallback_used,
+            fallback_origin: record.fallback_origin,
+          });
+        } catch {
+          console.warn("Malformed audit_event payload, ignoring:", msg.payload);
+        }
       }
     },
-    [setAgentState, setActiveEdge]
+    [setAgentState, setActiveEdge, setDiagnosis]
   );
 
   // No mockFallback here on purpose — WorkflowDAG's own "Trigger Full Heal
-  // Sequence" / "Trigger Escalation" buttons already serve as its offline
-  // demo mode. Adding a second, automatic synthetic feed on top of those
-  // would fight the manual buttons for the same agent-orb state.
-  useWebSocket<StateChangeEnvelope>({ url: BACKEND_WS_URL, onMessage: handleStateChange });
+  // Sequence" / "Trigger Escalation" buttons (and the two manual "Show
+  // Mock Triage Card" buttons) already serve as offline demo mode. Adding
+  // an automatic synthetic feed on top would fight the manual controls
+  // for the same state.
+  useWebSocket<WsEnvelope>({ url: BACKEND_WS_URL, onMessage: handleWsMessage });
 
   const handleBreakIt = async () => {
     setBreakItDisabled(true);

@@ -52,10 +52,16 @@ class Orchestrator:
         self.audit_logger = audit_logger or TrustChainLogger()
         self.triage_agent = triage_agent
         self.remediation_agent = remediation_agent
+        # Day 10 fix: OptimizationAgent's ReroutePlan (assignments,
+        # excluded_workers, projected_throughput_pct) had no consumer at
+        # all — dispatched in parallel with Triage but silently dropped.
+        # Latest plan per worker, mirrors self.worker_states' simplicity.
+        self.reroute_plans: Dict[str, dict] = {}
 
         if self.event_bus is not None:
             self.event_bus.subscribe("LOOP_SUSPECTED", self.on_loop_suspected)
             self.event_bus.subscribe("DIAGNOSIS_COMPLETE", self.on_diagnosis_complete)
+            self.event_bus.subscribe("OPTIMIZATION_COMPLETE", self.on_optimization_complete)
 
     def get_state(self, worker_id: str) -> WorkerState:
         return self.worker_states.get(worker_id, WorkerState.HEALTHY)
@@ -69,6 +75,9 @@ class Orchestrator:
         confidence_score: float = None,
         fallback_used: bool = False,
         fallback_origin: str = None,
+        root_cause: str = None,
+        fix_type: str = None,
+        affected_field: str = None,
     ) -> None:
         current = self.get_state(worker_id)
         allowed = VALID_TRANSITIONS.get(current, set())
@@ -89,6 +98,9 @@ class Orchestrator:
             confidence_score=confidence_score,
             fallback_used=fallback_used,
             fallback_origin=fallback_origin,
+            root_cause=root_cause,
+            fix_type=fix_type,
+            affected_field=affected_field,
         )
 
         logger.info(
@@ -137,6 +149,9 @@ class Orchestrator:
                 worker_id, WorkerState.ESCALATED,
                 trigger_event="LOW_CONFIDENCE", agent_name="Orchestrator",
                 confidence_score=confidence,
+                root_cause=event.get("root_cause"),
+                fix_type=event.get("fix_type"),
+                affected_field=event.get("affected_field"),
             )
             await self.event_bus.publish("ESCALATED", {"worker_id": worker_id, **event})
             return
@@ -147,6 +162,9 @@ class Orchestrator:
             confidence_score=confidence,
             fallback_used=event.get("fallback_used", False),
             fallback_origin=event.get("fallback_origin"),
+            root_cause=event.get("root_cause"),
+            fix_type=event.get("fix_type"),
+            affected_field=event.get("affected_field"),
         )
 
         if self.remediation_agent is None:
@@ -182,3 +200,25 @@ class Orchestrator:
                 "ESCALATED",
                 {"worker_id": worker_id, **remediation_result},
             )
+
+    async def on_optimization_complete(self, event: dict) -> None:
+        """OptimizationAgent dispatches in parallel with Triage on every
+        LOOP_SUSPECTED (per master doc Section 6's concurrency guarantee).
+        Day 10 fix: this had no consumer at all — ReroutePlan was computed
+        and immediately discarded. Stores the latest plan per worker and
+        writes it to the audit trail so a reroute is provable after the
+        fact, same as every other real transition."""
+        worker_id = event["worker_id"]
+        plan = {
+            "assignments": event.get("assignments", []),
+            "excluded_workers": event.get("excluded_workers", []),
+            "projected_throughput_pct": event.get("projected_throughput_pct"),
+            "solver_used": event.get("solver_used"),
+        }
+        self.reroute_plans[worker_id] = plan
+        logger.info(
+            "[%s] ReroutePlan received: solver=%s throughput=%.1f%% "
+            "assignments=%d excluded=%s",
+            worker_id, plan["solver_used"], plan["projected_throughput_pct"] or 0.0,
+            len(plan["assignments"]), plan["excluded_workers"],
+        )

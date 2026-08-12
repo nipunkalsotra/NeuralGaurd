@@ -2,6 +2,9 @@
 """
 Orchestrator tests — Day 3.
 Verifies: Sentinel detects loop -> Orchestrator transitions -> Triage dispatched.
+Day 10: Orchestrator also consumes OptimizationAgent's ReroutePlan (was
+computed and silently dropped before — see docs/api_contracts.md Day 10
+notes on the OPTIMIZATION_COMPLETE consumer gap).
 """
 
 from unittest.mock import MagicMock
@@ -125,6 +128,20 @@ async def test_full_fsm_verified_true_reaches_resumed(tmp_path, monkeypatch):
     assert orch.get_state("worker-3") == WorkerState.RESUMED
     assert audit_logger.verify_chain() is True
 
+    import json
+    records = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+    remediating_record = next(r for r in records if r["to_state"] == "REMEDIATING")
+    # Day 10: root_cause/fix_type/affected_field must ride along on the
+    # transition into REMEDIATING — this is what lets the dashboard's
+    # Triage Report Card open on live data instead of only demo buttons.
+    assert remediating_record["root_cause"] == "Tax_ID missing"
+    assert remediating_record["fix_type"] == "SCHEMA_MISMATCH"
+    assert remediating_record["affected_field"] == "Tax_ID"
+    # Every other transition must still have these as null, not leak
+    # a stale diagnosis onto unrelated states.
+    loop_suspected_record = next(r for r in records if r["to_state"] == "LOOP_SUSPECTED")
+    assert loop_suspected_record["root_cause"] is None
+
 
 @pytest.mark.asyncio
 async def test_full_fsm_verified_false_escalates_no_retry(tmp_path, monkeypatch):
@@ -160,3 +177,25 @@ async def test_full_fsm_verified_false_escalates_no_retry(tmp_path, monkeypatch)
 
     assert orch.get_state("worker-4") == WorkerState.ESCALATED
     assert call_count["count"] == 1  # confirms NO retry loop
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_consumes_optimization_complete(orchestrator):
+    """Day 10 fix: OPTIMIZATION_COMPLETE previously had no subscriber at
+    all in production — the Optimization Agent's real, computed ReroutePlan
+    was silently discarded. Confirms it's now stored per worker."""
+    reroute_plan = {
+        "worker_id": "worker-5",
+        "assignments": [{"item_id": "item-1", "worker_id": "worker-2"}],
+        "excluded_workers": ["worker-5"],
+        "projected_throughput_pct": 97.0,
+        "solver_used": "or-tools",
+    }
+
+    await orchestrator.event_bus.publish("OPTIMIZATION_COMPLETE", reroute_plan)
+
+    stored = orchestrator.reroute_plans["worker-5"]
+    assert stored["assignments"] == reroute_plan["assignments"]
+    assert stored["excluded_workers"] == ["worker-5"]
+    assert stored["projected_throughput_pct"] == 97.0
+    assert stored["solver_used"] == "or-tools"

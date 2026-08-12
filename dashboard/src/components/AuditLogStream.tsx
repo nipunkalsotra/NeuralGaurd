@@ -22,6 +22,12 @@ export interface AuditLogPayload {
   confidence_score: number | null;
   fallback_used: boolean;
   fallback_origin: string | null;
+  // Day 10: additive fields, null except on the DIAGNOSING->REMEDIATING/
+  // ESCALATED transition — carries Triage's real diagnosis so the Triage
+  // Report Card can open on live data (see App.tsx's handleStateChange).
+  root_cause?: string | null;
+  fix_type?: string | null;
+  affected_field?: string | null;
   previous_hash: string;
   current_hash: string;
 }

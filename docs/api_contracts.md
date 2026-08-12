@@ -256,3 +256,54 @@ actual live endpoint rather than a direct unit test:
 
 Full round-trip (HTTP request in → RESUMED + audit record out) confirmed
 under the 5s blocker.
+
+## Day 10 Status — Team-Wide Integration: Contract Audit
+
+**Scope:** Day 10 across all four roles is one shared task — audit the
+exact contracts named in each person's Day-10 write-up against the real
+running code, fix what's actually broken, verify what isn't. Covers
+Nipun/Rashi's named contracts (LOOP_SUSPECTED event, ReroutePlan, Fault
+Injection response, Audit Log record) and Tushar's three example drift
+patterns (field-name drift, timestamp format drift, type drift).
+
+### Audited clean — no fix needed
+| Contract | Result |
+|---|---|
+| LOOP_SUSPECTED event shape (`worker_id, similarity, consecutive_count, error_hash, embedding_vector, timestamp`) | ✅ `SentinelAgent.detect_loop()` matches exactly |
+| Fault Injection response shape (`injected, target, fault_type, timestamp, details`) | ✅ `InjectResponse` matches exactly |
+| Audit Log record shape | ✅ Already fixed Day 9 (`audit_event` type-name bug) |
+| Unix-epoch vs ISO8601 timestamps | ✅ No epoch timestamps ever sent over the wire — cache/circuit-breaker internals use `time.time()` but never leave the process |
+| `worker_id` as int vs string | ✅ Always `str`, enforced by Pydantic on every model |
+
+### Real gaps found and fixed
+1. **`OPTIMIZATION_COMPLETE` had zero production subscribers.** Rashi's
+   OptimizationAgent computes a real `ReroutePlan` and dispatches it in
+   parallel with Triage on every `LOOP_SUSPECTED` — but Nipun's
+   Orchestrator never subscribed to it, so the plan was silently
+   discarded every single time. This is exactly what both Nipun's and
+   Rashi's Day-10 pass criteria required ("Optimization returns
+   ReroutePlans consumed by Orchestrator"). Fixed: `Orchestrator` now
+   subscribes and stores the latest plan per worker in
+   `self.reroute_plans`, logged on receipt. Covered by
+   `test_orchestrator_consumes_optimization_complete`.
+2. **Triage Report Card was never wired to live data** — a gap flagged
+   during Day 9 but left out of scope then. Closed now since Day 10
+   explicitly requires "dashboard renders correctly with live data"
+   end-to-end. The `audit_event` broadcast on the DIAGNOSING→REMEDIATING/
+   ESCALATED transition now additionally carries `root_cause`, `fix_type`,
+   `affected_field` (null on every other transition) — additive, not a
+   schema break. Dashboard's `App.tsx` opens the Triage Report Card on
+   this real data, mapping `confidence_score` → `confidence` (the exact
+   class of field-name mapping fix Nipun's Day-10 guide names). Covered
+   by an extended `test_full_fsm_verified_true_reaches_resumed` assertion.
+3. **`TriageReportCard.tsx`'s `FixType` union didn't match reality.** It
+   listed `MISSING_FIELD`/`UNKNOWN`, values TriageAgent never actually
+   produces; the real enum (now also the constrained LLM prompt's enum,
+   see Day 9's nemoclaw_cli.md-adjacent fix) is `SCHEMA_MISMATCH |
+   TYPE_ERROR | MISSING_IMPORT | TIMEOUT | CONNECTION_ERROR |
+   RESOURCE_ERROR`. A real value hitting the old union would have missed
+   `FIX_TYPE_STYLES` silently. Fixed the union and added a default style
+   as defense-in-depth against any future/unrecognized value.
+
+Full backend suite: 71 passed, 2 skipped. Wrapper suite: 6 passed.
+Dashboard: clean `tsc -b && vite build`, no new lint issues.

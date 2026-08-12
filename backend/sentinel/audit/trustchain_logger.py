@@ -39,7 +39,15 @@ class TrustChainLogger:
         confidence_score: float = None,
         fallback_used: bool = False,
         fallback_origin: str = None,
+        root_cause: str = None,
+        fix_type: str = None,
+        affected_field: str = None,
     ) -> dict:
+        # root_cause/fix_type/affected_field (Day 10): additive fields,
+        # null for every transition except DIAGNOSING->REMEDIATING/
+        # ESCALATED — carries Triage's real diagnosis onto the wire so the
+        # dashboard's Triage Report Card can finally open on live data
+        # instead of only the two manual demo buttons.
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "worker_id": worker_id,
@@ -50,6 +58,9 @@ class TrustChainLogger:
             "confidence_score": confidence_score,
             "fallback_used": fallback_used,
             "fallback_origin": fallback_origin,
+            "root_cause": root_cause,
+            "fix_type": fix_type,
+            "affected_field": affected_field,
             "previous_hash": self.previous_hash,
         }
         record_content = json.dumps(record, sort_keys=True)
