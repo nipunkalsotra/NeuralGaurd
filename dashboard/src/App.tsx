@@ -20,6 +20,7 @@ const MOCK_DIAGNOSIS_FALLBACK: DiagnosisResult = {
   ...MOCK_DIAGNOSIS_NORMAL,
   confidence: 0.68,
   fallback_used: true,
+  fallback_origin: "groq",
 };
 
 const BACKEND_WS_URL = import.meta.env.VITE_WS_URL as string | undefined;

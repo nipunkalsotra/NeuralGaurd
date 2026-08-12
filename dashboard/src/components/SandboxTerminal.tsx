@@ -100,7 +100,24 @@ export default function SandboxTerminal({ wsUrl }: SandboxTerminalProps) {
     );
   }, []);
 
-  useWebSocket<WSEnvelope>({ url: wsUrl, onMessage: handleMessage, mockFallback: startMock });
+  const { connected } = useWebSocket<WSEnvelope>({
+    url: wsUrl,
+    onMessage: handleMessage,
+    mockFallback: startMock,
+  });
+
+  // Same fix as AuditLogStream.tsx: stop the mock generator once the real
+  // WS reconnects, otherwise it runs forever alongside real sandbox output.
+  // Note: this only stops the LOCAL synthetic filler lines (started when
+  // this dashboard's own WS connection drops) — it must NOT touch
+  // `mockActive`, which is a separate signal driven by the backend's real
+  // mock_banner messages (NemoClaw itself falling back to mock mode).
+  useEffect(() => {
+    if (connected && mockRef.current) {
+      clearInterval(mockRef.current);
+      mockRef.current = undefined;
+    }
+  }, [connected]);
 
   useEffect(() => {
     return () => {

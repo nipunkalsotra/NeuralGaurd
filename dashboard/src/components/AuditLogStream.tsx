@@ -26,9 +26,17 @@ export interface AuditLogPayload {
   current_hash: string;
 }
 
+// Wire envelope, per the LOCKED docs/websocket_schema.md (§2, §4): the
+// backend sends `type: "audit_event"` (NOT "audit_log"), and `payload` is
+// ALWAYS a JSON-stringified string at this layer, never a nested object —
+// every `type` shares one fixed envelope shape so the parser stays simple.
+// This component previously used the wrong type name and treated payload
+// as an already-parsed object, so it silently dropped every real message
+// from the backend (confirmed live on Day 9 — nothing rendered from a
+// genuinely working backend connection).
 interface AuditLogEvent {
-  type: "audit_log";
-  payload: AuditLogPayload;
+  type: string;
+  payload: string;
 }
 
 const STATE_STYLES: Record<FSMState, { border: string; badge: string }> = {
@@ -46,6 +54,22 @@ const AGENTS = ["All", "SentinelAgent", "TriageAgent", "RemediationAgent", "Opti
 function formatTime(iso: string) {
   const d = new Date(iso);
   return d.toLocaleTimeString("en-GB"); // HH:MM:SS
+}
+
+// Real WebSocket delivery isn't guaranteed to preserve event order (e.g.
+// the Orchestrator and OptimizationAgent dispatch concurrently and their
+// broadcasts can race) — insert new entries by timestamp instead of
+// blindly appending, so the stream never displays events out of order.
+function insertByTimestamp(
+  entries: AuditLogPayload[],
+  incoming: AuditLogPayload
+): AuditLogPayload[] {
+  const incomingTime = new Date(incoming.timestamp).getTime();
+  let i = entries.length;
+  while (i > 0 && new Date(entries[i - 1].timestamp).getTime() > incomingTime) {
+    i -= 1;
+  }
+  return [...entries.slice(0, i), incoming, ...entries.slice(i)].slice(-200);
 }
 
 function verifyHashChain(prevHash: string, currentHash: string): boolean {
@@ -140,20 +164,37 @@ export default function AuditLogStream({ wsUrl }: AuditLogStreamProps) {
       };
       lastHash = currentHash;
       i += 1;
-      setEntries((prev) => [...prev, payload].slice(-200));
+      setEntries((prev) => insertByTimestamp(prev, payload));
     }, 2500);
   }, []);
 
   const handleMessage = useCallback((msg: AuditLogEvent) => {
-    if (msg.type !== "audit_log") return;
-    setEntries((prev) => [...prev, msg.payload].slice(-200));
+    if (msg.type !== "audit_event") return;
+    try {
+      const payload = JSON.parse(msg.payload) as AuditLogPayload;
+      setEntries((prev) => insertByTimestamp(prev, payload));
+    } catch {
+      console.warn("Malformed audit_event payload, ignoring:", msg.payload);
+    }
   }, []);
 
-  useWebSocket<AuditLogEvent>({
+  const { connected } = useWebSocket<AuditLogEvent>({
     url: wsUrl,
     onMessage: handleMessage,
     mockFallback: startMock,
   });
+
+  // Real WS reconnected — stop the mock generator, otherwise it keeps
+  // running forever alongside real data (confirmed via a live cross-machine
+  // test on Day 9: after one brief early disconnect/reconnect cycle, mock
+  // records with fake hashes kept interleaving with real backend events
+  // indefinitely, since nothing ever cleared this interval on reconnect).
+  useEffect(() => {
+    if (connected && mockRef.current) {
+      clearInterval(mockRef.current);
+      mockRef.current = null;
+    }
+  }, [connected]);
 
   useEffect(() => {
     return () => {

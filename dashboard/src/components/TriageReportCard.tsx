@@ -8,9 +8,15 @@ export interface DiagnosisResult {
   root_cause: string;
   fix_type: FixType;
   affected_field: string;
-  confidence: number; // 0.0 - 1.0
+  confidence: number | null | undefined; // 0.0 - 1.0 — real backend can omit this if Groq's JSON repair layer produces a malformed/incomplete diagnosis
   fallback_used: boolean;
+  fallback_origin?: string | null; // "groq" | "rule_based_heuristic" | null/undefined when not provided
 }
+
+const FALLBACK_ORIGIN_LABELS: Record<string, string> = {
+  groq: "Groq Fallback Active",
+  rule_based_heuristic: "Rule-Based Fallback Active",
+};
 
 interface TriageReportCardProps {
   diagnosis: DiagnosisResult | null;
@@ -30,6 +36,8 @@ function confidenceColor(confidence: number) {
   return { bar: "bg-rose-500", text: "text-rose-400" };
 }
 
+const UNKNOWN_CONFIDENCE = { bar: "bg-slate-600", text: "text-slate-400" };
+
 export default function TriageReportCard({ diagnosis, onClose }: TriageReportCardProps) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -46,8 +54,15 @@ export default function TriageReportCard({ diagnosis, onClose }: TriageReportCar
 
   if (!diagnosis) return null;
 
-  const confidencePct = Math.round(diagnosis.confidence * 100);
-  const { bar, text } = confidenceColor(diagnosis.confidence);
+  // Real backend data can omit confidence entirely (e.g. a malformed LLM
+  // response that skipped repair_json's expected fields) — guard instead
+  // of letting `null * 100` / `undefined * 100` render "NaN%".
+  const hasConfidence = typeof diagnosis.confidence === "number" && !isNaN(diagnosis.confidence);
+  const confidencePct = hasConfidence ? Math.round(diagnosis.confidence! * 100) : null;
+  const { bar, text } = hasConfidence ? confidenceColor(diagnosis.confidence!) : UNKNOWN_CONFIDENCE;
+  const fallbackLabel = diagnosis.fallback_origin
+    ? FALLBACK_ORIGIN_LABELS[diagnosis.fallback_origin] ?? "Fallback Active"
+    : "Fallback Active";
 
   return (
     <AnimatePresence>
@@ -105,7 +120,7 @@ export default function TriageReportCard({ diagnosis, onClose }: TriageReportCar
                   animate={{ scale: [1, 1.05, 1] }}
                   transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                 >
-                  Groq Fallback Active
+                  {fallbackLabel}
                 </motion.span>
               )}
             </div>
@@ -115,13 +130,15 @@ export default function TriageReportCard({ diagnosis, onClose }: TriageReportCar
                 <span className="text-xs uppercase tracking-wider text-slate-400">
                   Confidence
                 </span>
-                <span className={`text-sm font-semibold ${text}`}>{confidencePct}%</span>
+                <span className={`text-sm font-semibold ${text}`}>
+                  {hasConfidence ? `${confidencePct}%` : "N/A"}
+                </span>
               </div>
               <div className="w-full h-2 rounded-full bg-slate-700 overflow-hidden">
                 <motion.div
                   className={`h-full rounded-full ${bar}`}
                   initial={{ width: "0%" }}
-                  animate={{ width: `${confidencePct}%` }}
+                  animate={{ width: `${confidencePct ?? 0}%` }}
                   transition={{ type: "spring", duration: 0.8, bounce: 0.25 }}
                 />
               </div>
