@@ -95,10 +95,12 @@ async def test_nemoclaw_killed_mid_request_falls_back_to_mock_under_5s(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_nemoclaw_non_zero_exit_falls_back_to_mock(monkeypatch):
-    """Process exits on its own with a non-zero code (no kill needed) —
-    confirms the returncode!=0 branch also produces the standard mock
-    fallback contract."""
+async def test_nemoclaw_non_zero_exit_is_a_real_patch_failure_not_a_fallback(monkeypatch):
+    """Process exits on its own with a plain non-zero code (no kill, not
+    137) — a real patch failure inside a healthy sandbox. Must return
+    verified=False directly, NOT silently swap in a mock success. This is
+    the behavior docs/nemoclaw_cli.md's Day 5 table always recommended;
+    Day 9 fixes the code to actually match it."""
     real_create_subprocess_exec = asyncio.create_subprocess_exec
 
     async def stand_in_exit_1(*args, **kwargs):
@@ -109,6 +111,30 @@ async def test_nemoclaw_non_zero_exit_falls_back_to_mock(monkeypatch):
         )
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", stand_in_exit_1)
+
+    result = await nemoclaw_adapter.nemoclaw_remediate("test-patch", "fixture.json")
+
+    assert result["verified"] is False
+    assert result["flagged"] is False
+    assert result["mode"] == "nemoclaw"
+    assert result["reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_nemoclaw_oom_exit_code_137_falls_back_to_mock(monkeypatch):
+    """Exit code 137 is Docker's OOM-kill signature (128+SIGKILL) — an
+    infrastructure failure, not a patch failure. Must fall back to mock,
+    unlike a plain non-zero exit."""
+    real_create_subprocess_exec = asyncio.create_subprocess_exec
+
+    async def stand_in_exit_137(*args, **kwargs):
+        return await real_create_subprocess_exec(
+            "python3", "-c", "import sys; sys.exit(137)",
+            stdout=kwargs.get("stdout"),
+            stderr=kwargs.get("stderr"),
+        )
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", stand_in_exit_137)
 
     result = await nemoclaw_adapter.nemoclaw_remediate("test-patch", "fixture.json")
 

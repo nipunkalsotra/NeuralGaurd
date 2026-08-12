@@ -6,6 +6,13 @@ within 3 steps, feeding into the real Orchestrator/Triage/Remediation chain.
 Day 8: Wired to actually drive real Sentinel detect_loop() and broadcast
 the resulting state_change over WebSocket — closes the gap where fault
 injection only set backend state without triggering real detection.
+Day 9: Wired to the REAL Orchestrator/EventBus/OptimizationAgent — this
+endpoint used to fake the LOOP_SUSPECTED -> ... transition with a single
+direct broadcast_state_change call. It now publishes onto the same shared
+EventBus the Orchestrator and OptimizationAgent subscribe to, so a real
+fault genuinely drives Triage -> Remediation and Optimization (dispatched
+concurrently, per master doc Section 6) -- closes the "fault-injection-to-
+Orchestrator wiring" gap noted in docs/api_contracts.md's Day 8 status.
 """
 
 import logging
@@ -15,8 +22,12 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from api.websocket import broadcast_state_change
 from sentinel.agents.sentinel_agent import SentinelAgent
+from sentinel.agents.triage_agent import TriageAgent
+from sentinel.agents.remediation_agent import RemediationAgent
+from sentinel.agents.optimization_agent import OptimizationAgent
+from sentinel.agents.orchestrator import Orchestrator
+from sentinel.event_bus.asyncio_queue_bus import EventBus
 
 logger = logging.getLogger("sentinel.fault_injection")
 router = APIRouter()
@@ -24,10 +35,20 @@ router = APIRouter()
 # In-memory worker fault state — Day 7 scope, no persistence needed
 _worker_faults: dict = {}
 
-# Shared Sentinel instance for driving real detection from injected faults.
-# Simple module-level singleton — matches the project's "don't
-# over-engineer Phase 1" philosophy rather than full dependency injection.
+# Shared instances driving real detection/diagnosis/remediation/reroute
+# from injected faults. Simple module-level singletons — matches the
+# project's "don't over-engineer Phase 1" philosophy rather than full
+# dependency injection.
 _sentinel = SentinelAgent()
+_event_bus = EventBus()
+_triage_agent = TriageAgent()
+_remediation_agent = RemediationAgent()
+_optimization_agent = OptimizationAgent(event_bus=_event_bus)
+_orchestrator = Orchestrator(
+    event_bus=_event_bus,
+    triage_agent=_triage_agent,
+    remediation_agent=_remediation_agent,
+)
 
 
 class InjectRequest(BaseModel):
@@ -122,25 +143,29 @@ async def inject_fault(request: InjectRequest):
     # fault-induced error 4x (matches the pattern in test_fault_injection.py)
     fault = get_worker_fault(request.target)
     loop_event = None
+    log_line = None
     if fault:
         error_text = (
             fault.get("removed_field")
             or fault.get("forced_error")
             or fault.get("type")
         )
+        log_line = f"Error: {error_text} (fault: {fault['type']})"
         for _ in range(4):
             loop_event = _sentinel.detect_loop(
-                request.target,
-                f"Error: {error_text} (fault: {fault['type']})",
-                fault["error_signature"],
+                request.target, log_line, fault["error_signature"],
             )
 
         if loop_event:
-            await broadcast_state_change(
-                worker_id=request.target,
-                from_state="HEALTHY",
-                to_state="LOOP_SUSPECTED",
-                trigger_event="LOOP_SUSPECTED",
+            # Publish onto the shared EventBus rather than faking a single
+            # broadcast — the Orchestrator (Triage -> Remediation) and the
+            # OptimizationAgent both subscribe to LOOP_SUSPECTED and are
+            # dispatched concurrently (asyncio.gather in EventBus.publish).
+            # The Orchestrator's own transition() calls broadcast_state_change
+            # and broadcast_audit_event on every real transition, so no
+            # separate broadcast call is needed here anymore.
+            await _event_bus.publish(
+                "LOOP_SUSPECTED", {**loop_event, "log_lines": [log_line]},
             )
 
     return InjectResponse(

@@ -66,8 +66,13 @@ violet=VERIFYING, rose=ESCALATED — matches master doc Section 11.3 palette.
 **Owner:** Nipun | For: Tushar's Workflow DAG animations
 
 Live end-to-end today: HEALTHY → LOOP_SUSPECTED → DIAGNOSING → REMEDIATING,
-with Optimization Agent dispatched genuinely in parallel (not stubbed —
-confirmed via test_optimization_and_triage_dispatch_in_parallel).
+with Optimization Agent dispatched genuinely in parallel (not stubbed).
+**Day 9 correction:** the `test_optimization_and_triage_dispatch_in_parallel`
+test named here was never actually added to the repo — parallel dispatch
+was real (both agents subscribe to the same EventBus topic) but unproven
+until Day 9's `test_fault_injection_drives_sentinel_and_optimization_in_parallel_via_orchestrator`
+(`backend/tests/test_day9_rashi_integration.py`), which exercises it for
+real through the live `/demo/inject` endpoint.
 
 REMEDIATING → VERIFYING → RESUMED/ESCALATED remains stubbed — Remediation
 Agent is Nipun's Day 7 task, does not exist yet. Full end-to-end test
@@ -170,7 +175,7 @@ installed, so PRIMARY mode (`NEMOCLAW_MODE=nemoclaw`) here genuinely
 exercises the fallback path rather than the happy path — which is exactly
 the condition Day 9 is supposed to prove is safe.
 
-New coverage added: `wrapper/tests/test_nemoclaw_adapter.py` (5 tests,
+New coverage added: `wrapper/tests/test_nemoclaw_adapter.py` (6 tests,
 all passing), exercising `real/nemoclaw_adapter.py` and the wrapper's
 `/v1/remediate` + `/v1/status` HTTP contract directly, using real killable
 OS subprocesses standing in for the nemoclaw CLI (not mocked coroutines) —
@@ -181,7 +186,8 @@ would for a real nemoclaw process:
 |---|---|
 | `nemoclaw` binary missing (real condition on this host) → mock fallback, contract intact | ✅ PASS |
 | **Killed mid-request → mock fallback** | ✅ PASS — measured **0.303s** (blocker: <5s), returncode `-9` (SIGKILL) correctly routed to the fallback branch |
-| Non-zero exit (no kill) → mock fallback | ✅ PASS |
+| Non-zero exit, no kill → real patch failure (`verified: false`, NOT a fallback — fixed, see `docs/nemoclaw_cli.md` Day 9 note) | ✅ PASS |
+| Exit code 137 (Docker OOM-kill signature), no kill → mock fallback | ✅ PASS |
 | `/v1/status` reports `mode: "nemoclaw"` in PRIMARY mode | ✅ PASS |
 | `/v1/remediate` full HTTP round-trip in PRIMARY mode → mock contract (`verified`, `flagged`, `mode`, `reason`) | ✅ PASS |
 
@@ -195,3 +201,58 @@ All Day 9 blocker checks for Shreshtha's scope pass. Dashboard-side
 verification (Tushar connecting to this backend) and cross-machine network
 setup (ngrok/local-IP, moot on a single-machine build) are out of scope for
 this pass.
+
+## Day 9 Status (Nipun) — Integration Test on Shreshtha's Machine
+**Scope note:** covers Nipun's Day 9 only (SDK Lead & Fallback Architect —
+owns Orchestrator, TriageAgent, RemediationAgent). Tushar's Day 9
+(dashboard-to-backend connection) remains out of scope.
+
+Closed a real gap first: `api/fault_injection.py`'s `/demo/inject`
+endpoint used to fake the LOOP_SUSPECTED transition with a single direct
+`broadcast_state_change` call — it never actually drove the Orchestrator,
+so Triage/Remediation/Optimization never ran for an injected fault. This
+was the "fault-injection-to-Orchestrator wiring" gap the Day 8 status note
+above flagged as deferred to Day 9-10. It's now wired to a real, shared
+`EventBus` + `Orchestrator` + `OptimizationAgent` (module-level
+singletons, same pattern as the existing `_sentinel` singleton).
+
+New coverage: `backend/tests/test_day9_nipun_integration.py` drives the
+full FSM (HEALTHY → LOOP_SUSPECTED → DIAGNOSING → REMEDIATING → VERIFYING
+→ RESUMED) against the REAL, live `wrapper_service.py` (Shreshtha's owned
+code) started as a subprocess in PRIMARY mode by a shared
+`live_wrapper_primary_mode` fixture in `backend/tests/conftest.py` — not
+mocked at the httpx boundary like the Day 5-8 orchestrator tests. Result:
+RESUMED reached, audit hash chain verified intact, fallback correctly
+recorded, full round-trip in well under the 5s blocker.
+
+Also added `backend/tests/conftest.py`'s `deterministic_triage_for_fault_injection`
+autouse fixture — without it, every test hitting `/demo/inject` made real
+network calls to Nemotron/Groq (observed ~20s for a test file that should
+run in under a second, since no real API keys are set in this
+environment) to re-prove logic Day 8 already unit-tests in isolation.
+Full backend suite dropped from ~14s to ~4s as a result.
+
+## Day 9 Status (Rashi) — Integration Test on Shreshtha's Machine
+**Scope note:** covers Rashi's Day 9 only (Algorithms & Optimization —
+owns SentinelAgent's detection algorithm, OptimizationAgent, Fault
+Injection Backend, and jointly the audit fields). Tushar's Day 9 remains
+out of scope.
+
+New coverage: `backend/tests/test_day9_rashi_integration.py` hits the
+real `POST /demo/inject` HTTP endpoint (via the live wrapper, same fixture
+as Nipun's test above) and confirms, for the first time through the
+actual live endpoint rather than a direct unit test:
+- Sentinel's real `detect_loop()` fires from the injected fault.
+- The Optimization Agent is dispatched **concurrently** with
+  Triage/Remediation (`asyncio.gather` inside `EventBus.publish`) — this
+  closes out the "parallel dispatch" claim in the Day 5 note above
+  (`test_optimization_and_triage_dispatch_in_parallel`, referenced there,
+  did not actually exist in the repo; this test is the real version of
+  that proof, exercised at the HTTP level).
+- The audit record for the resulting RESUMED transition correctly shows
+  `fallback_used: true` — NemoClaw isn't available on this host, so the
+  wrapper's mock fallback is what actually resolves the worker, and the
+  audit trail says so.
+
+Full round-trip (HTTP request in → RESUMED + audit record out) confirmed
+under the 5s blocker.

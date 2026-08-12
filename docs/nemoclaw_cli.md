@@ -456,15 +456,22 @@ real, not a simulation of one) — see `wrapper/tests/test_nemoclaw_adapter.py`.
 - **Full HTTP round-trip** through `wrapper_service.py`'s `/v1/remediate`
   and `/v1/status` in PRIMARY mode: confirmed contract intact end-to-end.
 
-**Note on the "Updated summary table" above:** that table (Day 5)
-recommends non-zero exit codes should return `verified: false` directly
-rather than falling back to mock, reasoning that a real patch failure
-isn't a NemoClaw infrastructure problem. The Day 9 tests confirm the
-*actual shipped behavior* is to fall back to mock on any non-zero exit,
-including legitimate patch failures — this is a real, pre-existing
-deviation from the Day 5 recommendation (not introduced by Day 9), flagged
-here for whoever revisits patch-failure semantics next, not fixed as part
-of this integration pass.
+**Fixed:** the adapter previously fell back to mock on *any* non-zero exit
+code, contradicting the Day 5 recommendation above (a real patch failure
+isn't a NemoClaw infrastructure problem, and silently swapping in a mock
+success would hide genuine patch bugs from the Remediation Agent's
+verification gate). `real/nemoclaw_adapter.py` now distinguishes:
+- Killed by a signal (negative returncode on POSIX, e.g. `-9` for
+  SIGKILL) or exit code `137` (Docker's OOM-kill signature) →
+  infrastructure failure → auto-fallback to mock, `flagged: true`.
+- Any other non-zero exit → real patch failure in a healthy sandbox →
+  `verified: false`, `mode: "nemoclaw"`, `flagged: false` — no fallback,
+  matches this doc's table exactly. Escalates via the Orchestrator's
+  normal `verified: false → ESCALATED` path, not a silent mock success.
+
+Covered by `test_nemoclaw_non_zero_exit_is_a_real_patch_failure_not_a_fallback`
+and `test_nemoclaw_oom_exit_code_137_falls_back_to_mock` in
+`wrapper/tests/test_nemoclaw_adapter.py`.
 
 Full state machine (HEALTHY → LOOP_SUSPECTED → DIAGNOSING → REMEDIATING →
 VERIFYING → RESUMED) with audit hash-chain integrity is covered on the

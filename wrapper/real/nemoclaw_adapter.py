@@ -110,13 +110,34 @@ async def nemoclaw_remediate(patch: str, test_fixture: str, worker_id: str = "wo
             "mode": "mock", "flagged": True, "reason": "nemoclaw_cli_failed",
         }
 
-    if returncode != 0:
-        logger.warning("nemoclaw exec returned code %d — auto-fallback to mock.", returncode)
+    # Infrastructure failure (process killed by a signal -> negative
+    # returncode on POSIX, or Docker's OOM-kill signature 137) -> the
+    # sandbox itself failed, not the patch. Auto-fallback to mock.
+    # A plain positive, non-137 exit code is the patch's OWN test fixture
+    # failing verification inside a working sandbox -> that's a real
+    # result, not an infrastructure problem, so it must NOT be silently
+    # swapped for a mock success (see docs/nemoclaw_cli.md "Updated
+    # summary table" / Day 9 note — this used to conflate the two).
+    if returncode < 0 or returncode == 137:
+        logger.warning(
+            "nemoclaw exec killed or OOM'd (code %d) — auto-fallback to mock.", returncode
+        )
         await _relay_mock_banner(worker_id, reason="nemoclaw_cli_failed")
         return {
-            "verified": True, "output": f"nemoclaw exec exited with code {returncode}",
-            "sandbox_log": f"[FALLBACK] Non-zero exit code: {returncode}",
+            "verified": True, "output": f"nemoclaw exec killed or OOM'd (code {returncode})",
+            "sandbox_log": f"[FALLBACK] Process killed or OOM, exit code: {returncode}",
             "mode": "mock", "flagged": True, "reason": "nemoclaw_cli_failed",
+        }
+
+    if returncode != 0:
+        logger.info(
+            "nemoclaw exec returned non-zero code %d — real patch failure, "
+            "not falling back (infrastructure is healthy).", returncode
+        )
+        return {
+            "verified": False, "output": f"nemoclaw exec exited with code {returncode}",
+            "sandbox_log": f"[NEMOCLAW] worker={worker_id} patch failed, exit_code={returncode}",
+            "mode": "nemoclaw", "flagged": False, "reason": None,
         }
 
     logger.info("nemoclaw exec succeeded — patch verified.")
