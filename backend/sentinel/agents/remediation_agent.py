@@ -77,10 +77,22 @@ class RemediationAgent:
             logger.error("Wrapper call timed out after 30s")
             self.circuit_breaker.record_failure()
             circuit_registry.get("NemoClaw").record_failure(reason="timeout")  # NEW
-            return {...}
+            return {
+                "verified": False,
+                "output": "Wrapper call timed out after 30s",
+                "sandbox_log": "",
+                "mode": "timeout",
+                "flagged": True,
+            }
 
         except Exception as e:
             logger.error("Wrapper call failed: %s", e)
             self.circuit_breaker.record_failure()
             circuit_registry.get("NemoClaw").record_failure(reason=str(e))  # NEW
-            return {...}
+            return {
+                "verified": False,
+                "output": f"Wrapper call failed: {e}",
+                "sandbox_log": "",
+                "mode": "error",
+                "flagged": True,
+            }
