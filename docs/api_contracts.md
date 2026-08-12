@@ -156,3 +156,42 @@ verified against real dashboard code once UI work resumes.
 | Orchestrator: nvidia-nat -> asyncio | N/A — nvidia-nat never integrated |
 
 Mock wrapper stress test: 20 concurrent requests, 0 errors, 2.05s total — confirms genuine parallelism (not serialized, given each request includes a 2s simulated delay)
+
+## Day 9 Status (Shreshtha) — Integration Day
+**Scope note:** this pass covers only Shreshtha's Day 9 (Infra & NemoClaw
+Specialist). Nipun/Rashi/Tushar's Day 9 items (fallback-chain unit test
+review, real-API integration checks, dashboard-to-backend connection) are
+tracked separately and not claimed done here.
+
+Blueprint Day 9 blocker: "Switch ALL services to PRIMARY mode on your
+machine ... Test auto-fallback: Kill NemoClaw mid-request, verify mock
+takes over in <5 seconds." This dev machine has no real `nemoclaw` binary
+installed, so PRIMARY mode (`NEMOCLAW_MODE=nemoclaw`) here genuinely
+exercises the fallback path rather than the happy path — which is exactly
+the condition Day 9 is supposed to prove is safe.
+
+New coverage added: `wrapper/tests/test_nemoclaw_adapter.py` (5 tests,
+all passing), exercising `real/nemoclaw_adapter.py` and the wrapper's
+`/v1/remediate` + `/v1/status` HTTP contract directly, using real killable
+OS subprocesses standing in for the nemoclaw CLI (not mocked coroutines) —
+kills propagate through asyncio's subprocess machinery exactly as they
+would for a real nemoclaw process:
+
+| Test | Result |
+|---|---|
+| `nemoclaw` binary missing (real condition on this host) → mock fallback, contract intact | ✅ PASS |
+| **Killed mid-request → mock fallback** | ✅ PASS — measured **0.303s** (blocker: <5s), returncode `-9` (SIGKILL) correctly routed to the fallback branch |
+| Non-zero exit (no kill) → mock fallback | ✅ PASS |
+| `/v1/status` reports `mode: "nemoclaw"` in PRIMARY mode | ✅ PASS |
+| `/v1/remediate` full HTTP round-trip in PRIMARY mode → mock contract (`verified`, `flagged`, `mode`, `reason`) | ✅ PASS |
+
+Full state machine (HEALTHY → LOOP_SUSPECTED → DIAGNOSING → REMEDIATING →
+VERIFYING → RESUMED) with audit hash-chain integrity remains covered by
+`backend/tests/test_orchestrator.py::test_full_fsm_verified_true_reaches_resumed`
+(`audit_logger.verify_chain()` asserted `True`) — re-run clean as part of
+this pass (68 passed, 2 skipped, 0 failed across the full backend suite).
+
+All Day 9 blocker checks for Shreshtha's scope pass. Dashboard-side
+verification (Tushar connecting to this backend) and cross-machine network
+setup (ngrok/local-IP, moot on a single-machine build) are out of scope for
+this pass.

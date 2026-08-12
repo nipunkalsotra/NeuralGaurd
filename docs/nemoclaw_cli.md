@@ -438,5 +438,35 @@ is locked.
 
 ---
 
+## Day 9: Integration Day — Auto-Fallback Test Results
 
+Blocker check: "Switch ALL services to PRIMARY mode. Kill NemoClaw
+mid-request, verify mock takes over in <5 seconds." Tested against
+`real/nemoclaw_adapter.py` directly with real, killable OS subprocesses
+standing in for the `nemoclaw` binary (this machine doesn't have it
+installed, so PRIMARY mode here already exercises the fallback path for
+real, not a simulation of one) — see `wrapper/tests/test_nemoclaw_adapter.py`.
 
+- **Killed mid-request:** measured **0.303s** to fall back to mock
+  (blocker requires <5s). Killing the process produces returncode `-9`
+  (SIGKILL), which the adapter's `returncode != 0` branch already handles.
+- **Binary missing** (this host's actual condition in PRIMARY mode):
+  `FileNotFoundError` branch confirmed, contract intact.
+- **Non-zero exit, no kill:** confirmed the same branch, contract intact.
+- **Full HTTP round-trip** through `wrapper_service.py`'s `/v1/remediate`
+  and `/v1/status` in PRIMARY mode: confirmed contract intact end-to-end.
+
+**Note on the "Updated summary table" above:** that table (Day 5)
+recommends non-zero exit codes should return `verified: false` directly
+rather than falling back to mock, reasoning that a real patch failure
+isn't a NemoClaw infrastructure problem. The Day 9 tests confirm the
+*actual shipped behavior* is to fall back to mock on any non-zero exit,
+including legitimate patch failures — this is a real, pre-existing
+deviation from the Day 5 recommendation (not introduced by Day 9), flagged
+here for whoever revisits patch-failure semantics next, not fixed as part
+of this integration pass.
+
+Full state machine (HEALTHY → LOOP_SUSPECTED → DIAGNOSING → REMEDIATING →
+VERIFYING → RESUMED) with audit hash-chain integrity is covered on the
+backend side by `test_full_fsm_verified_true_reaches_resumed` — re-run
+clean as part of this pass.
