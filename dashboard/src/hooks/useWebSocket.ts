@@ -35,6 +35,11 @@ export function useWebSocket<T = unknown>({ url, onMessage, mockFallback }: UseW
         if (cancelledRef.current) return;
         setConnected(true);
         reconnectAttempt.current = 0;
+        // Re-arm the fallback: a future disconnect should be able to
+        // trigger mockFallback again. Without this, one early disconnect
+        // (e.g. during a page reload) permanently disables the fallback
+        // for the rest of the session after the first reconnect.
+        mockStarted.current = false;
         console.log("WebSocket connected:", url);
       };
 
