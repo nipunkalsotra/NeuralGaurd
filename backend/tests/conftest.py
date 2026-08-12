@@ -4,17 +4,20 @@ Day 9 — shared fixtures.
 
 `api.fault_injection` now wires the REAL Orchestrator/EventBus/
 OptimizationAgent (closing the fault-injection-to-Orchestrator gap — see
-docs/api_contracts.md's Day 9 notes). Triage's Nemotron -> Groq ->
-rule-based fallback chain is already fully unit-tested in isolation (Day 8,
-test_fallback_chains.py). Without this fixture, every test that hits
-POST /demo/inject would make real, slow, network-dependent calls to
-Nemotron and Groq (observed ~20s for a test file that should run in under
-a second, since no real API keys are set in this environment) just to
-re-prove logic Day 8 already covers. Autouse so no test accidentally
-depends on live third-party network access.
+docs/api_contracts.md's Day 9 notes). Both Sentinel's NIM embedding calls
+and Triage's Nemotron/Groq calls are already fully unit-tested in isolation
+(Day 2 and Day 8, respectively). Without the two autouse fixtures below,
+every test that hits POST /demo/inject would make real, slow,
+network-dependent calls to NIM/Nemotron/Groq (observed ~20s for a test
+file that should run in under a second, and separately a flaky Day-9
+integration test failing its <5s assertion on ~12s of real NIM latency,
+since no real API keys are set in this environment) just to re-prove logic
+already covered elsewhere. Autouse so no test accidentally depends on live
+third-party network access.
 """
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -27,7 +30,25 @@ import pytest
 from api import fault_injection
 
 WRAPPER_DIR = Path(__file__).resolve().parents[2] / "wrapper"
-LIVE_WRAPPER_PORT = 8181
+
+
+@pytest.fixture(autouse=True)
+def deterministic_sentinel_embeddings_for_fault_injection(monkeypatch):
+    """Same problem as the Triage fixture below, different agent: the
+    shared `_sentinel` singleton's NIM client has no valid key in this
+    environment, so every /demo/inject call was making a REAL network
+    round-trip to integrate.api.nvidia.com before falling back to local
+    sentence-transformers. That round-trip's latency is genuinely variable
+    (observed anywhere from ~1s to 12s+ across runs), which made the Day-9
+    integration tests' <5s timing assertions flaky — not a production bug,
+    a test-isolation gap. Force the NIM call to fail instantly so the
+    fallback to sentence-transformers (fast, local, already-loaded model)
+    is what actually runs, matching what Day 2's fallback-chain tests
+    already cover in isolation."""
+    def _instant_failure(_text):
+        raise RuntimeError("NIM disabled in tests — forced instant fallback")
+
+    monkeypatch.setattr(fault_injection._sentinel.nim_client, "embed", _instant_failure)
 
 
 @pytest.fixture(autouse=True)
@@ -62,19 +83,29 @@ def live_wrapper_primary_mode():
     the auto-fallback path end-to-end -- the actual point of Day 9's
     integration test, not a simulation of one. Used by Nipun's and Rashi's
     Day 9 tests, which each drive their own owned layer (Orchestrator /
-    fault injection) against this one real, shared wrapper process."""
+    fault injection) against this one real, shared wrapper process.
+
+    Port is picked dynamically rather than hardcoded — this fixture is
+    module-scoped, so test_day9_nipun_integration.py and
+    test_day9_rashi_integration.py each get their OWN subprocess instance.
+    A fixed port risked a bind race between one module's teardown and the
+    next module's setup if teardown didn't fully release the port in time."""
     wrapper_python = WRAPPER_DIR / ".venv" / "bin" / "python"
     python_bin = str(wrapper_python) if wrapper_python.exists() else sys.executable
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
 
     env = os.environ.copy()
     env["NEMOCLAW_MODE"] = "nemoclaw"
     proc = subprocess.Popen(
         [python_bin, "-m", "uvicorn", "wrapper_service:app",
-         "--host", "127.0.0.1", "--port", str(LIVE_WRAPPER_PORT)],
+         "--host", "127.0.0.1", "--port", str(port)],
         cwd=str(WRAPPER_DIR), env=env,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
-    base_url = f"http://127.0.0.1:{LIVE_WRAPPER_PORT}"
+    base_url = f"http://127.0.0.1:{port}"
     try:
         for _ in range(50):
             if proc.poll() is not None:

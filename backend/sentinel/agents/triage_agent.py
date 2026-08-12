@@ -173,8 +173,17 @@ Last log lines:
 
 Identify the root cause, classify the fix type, name the affected field, and provide a confidence score (0-1).
 
+fix_type MUST be exactly one of these values — choose the closest match,
+do not invent a new category or use free text:
+- SCHEMA_MISMATCH: a field is missing, renamed, or a schema/format change broke parsing
+- TYPE_ERROR: a value has the wrong type (e.g. expected a number, got a string)
+- MISSING_IMPORT: a dependency or module failed to load
+- TIMEOUT: a downstream call took too long / didn't respond in time
+- CONNECTION_ERROR: a downstream service refused or dropped the connection
+- RESOURCE_ERROR: the worker ran out of memory or another resource
+
 Return ONLY valid JSON in this exact format, no other text:
-{{"root_cause": "string", "fix_type": "string", "affected_field": "string", "confidence": 0.0}}"""
+{{"root_cause": "string", "fix_type": "SCHEMA_MISMATCH" | "TYPE_ERROR" | "MISSING_IMPORT" | "TIMEOUT" | "CONNECTION_ERROR" | "RESOURCE_ERROR", "affected_field": "string", "confidence": 0.0}}"""
 
     def diagnose(self, loop_event: dict, log_lines: list) -> dict:
         error_signature = loop_event.get("error_hash", "")

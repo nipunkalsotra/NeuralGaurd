@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import WorkflowDAG from "./views/WorkflowDAG";
 import AuditLogStream from "./components/AuditLogStream";
 import CircuitBreakerPanel from "./components/CircuitBreakerPanel";
@@ -7,6 +7,46 @@ import SandboxTerminal from "./components/SandboxTerminal";
 import TriageReportCard, { type DiagnosisResult } from "./components/TriageReportCard";
 import SimilarityGraph from "./views/SimilarityGraph";
 import HealthIndicators from "./views/HealthIndicators";
+import { useDashboardStore, type AgentId } from "./store/dashboardStore";
+import { useWebSocket } from "./hooks/useWebSocket";
+import type { WorkerState } from "./components/AgentOrb";
+
+interface StateChangeEnvelope {
+  type: string;
+  payload: string;
+}
+
+interface StateChangePayload {
+  from_state: WorkerState;
+  to_state: WorkerState;
+  trigger_event: string;
+}
+
+// Maps a real FSM to_state (per the locked docs/websocket_schema.md
+// `state_change` envelope) to which agent orbs light up and which edge
+// glows — mirrors WorkflowDAG.tsx's manual runHealSequence() demo walk,
+// but reacts to real backend events instead of a scripted timed sequence.
+// Both WorkflowDAG and HealthIndicators read the same Zustand store, so
+// wiring it once here drives both panels.
+const STATE_TO_AGENTS: Record<WorkerState, AgentId[]> = {
+  HEALTHY: ["sentinel", "triage", "remediation", "optimization", "orchestrator"],
+  LOOP_SUSPECTED: ["sentinel", "orchestrator"],
+  DIAGNOSING: ["triage", "orchestrator", "optimization"],
+  REMEDIATING: ["remediation", "orchestrator"],
+  VERIFYING: ["remediation", "orchestrator"],
+  RESUMED: ["sentinel", "triage", "remediation", "optimization", "orchestrator"],
+  ESCALATED: ["triage", "orchestrator"],
+};
+
+const STATE_TO_EDGE: Record<WorkerState, string | null> = {
+  HEALTHY: null,
+  LOOP_SUSPECTED: "e1",
+  DIAGNOSING: "e2",
+  REMEDIATING: "e4",
+  VERIFYING: "e5",
+  RESUMED: null,
+  ESCALATED: null,
+};
 
 const MOCK_DIAGNOSIS_NORMAL: DiagnosisResult = {
   root_cause: "Field 'Tax_ID' not found in new invoice format",
@@ -32,6 +72,31 @@ export default function App() {
   const [showHealthIndicators, setShowHealthIndicators] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [breakItDisabled, setBreakItDisabled] = useState(false);
+
+  const setAgentState = useDashboardStore((s) => s.setAgentState);
+  const setActiveEdge = useDashboardStore((s) => s.setActiveEdge);
+
+  const handleStateChange = useCallback(
+    (msg: StateChangeEnvelope) => {
+      if (msg.type !== "state_change") return;
+      try {
+        const { to_state, trigger_event } = JSON.parse(msg.payload) as StateChangePayload;
+        const agents = STATE_TO_AGENTS[to_state];
+        if (!agents) return;
+        agents.forEach((agent) => setAgentState(agent, to_state, trigger_event));
+        setActiveEdge(STATE_TO_EDGE[to_state]);
+      } catch {
+        console.warn("Malformed state_change payload, ignoring:", msg.payload);
+      }
+    },
+    [setAgentState, setActiveEdge]
+  );
+
+  // No mockFallback here on purpose — WorkflowDAG's own "Trigger Full Heal
+  // Sequence" / "Trigger Escalation" buttons already serve as its offline
+  // demo mode. Adding a second, automatic synthetic feed on top of those
+  // would fight the manual buttons for the same agent-orb state.
+  useWebSocket<StateChangeEnvelope>({ url: BACKEND_WS_URL, onMessage: handleStateChange });
 
   const handleBreakIt = async () => {
     setBreakItDisabled(true);

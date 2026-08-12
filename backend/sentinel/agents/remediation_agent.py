@@ -19,11 +19,20 @@ logger = logging.getLogger("sentinel.remediation_agent")
 WRAPPER_URL = os.getenv("WRAPPER_URL", "http://localhost:8081")
 
 
-# Patch generation strategies per fix_type, per master doc Section 4.3
+# Patch generation strategies per fix_type, per master doc Section 4.3.
+# Covers every fix_type value BOTH Triage paths can actually produce: the
+# LLM paths (Nemotron/Groq, constrained to this same enum in build_prompt())
+# and the rule-based heuristic's PATTERNS list (Day 4). TIMEOUT/
+# CONNECTION_ERROR/RESOURCE_ERROR were previously missing here even though
+# the heuristic could emit them — same "unknown fix_type" gap as the LLM
+# free-text problem, just from a different source.
 PATCH_TEMPLATES = {
     "SCHEMA_MISMATCH": lambda field: f"Make field '{field}' optional with default null",
     "TYPE_ERROR": lambda field: f"Add type coercion for field '{field}'",
     "MISSING_IMPORT": lambda field: f"Add import statement for '{field}'",
+    "TIMEOUT": lambda field: "Increase downstream timeout and add retry with backoff",
+    "CONNECTION_ERROR": lambda field: "Verify downstream service health, retry connection",
+    "RESOURCE_ERROR": lambda field: "Reduce batch size / free memory before retrying",
 }
 
 
@@ -49,6 +58,7 @@ class RemediationAgent:
         """
         fix_type = diagnosis.get("fix_type", "unknown")
         affected_field = diagnosis.get("affected_field", "unknown")
+        worker_id = diagnosis.get("worker_id", "worker-unknown")
         patch = self.generate_patch(fix_type, affected_field)
 
         if not self.circuit_breaker.is_closed():
@@ -65,7 +75,7 @@ class RemediationAgent:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     f"{self.wrapper_url}/v1/remediate",
-                    json={"patch": patch, "test_fixture": test_fixture},
+                    json={"patch": patch, "test_fixture": test_fixture, "worker_id": worker_id},
                 )
                 response.raise_for_status()
                 result = response.json()
