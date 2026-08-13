@@ -72,6 +72,57 @@ def test_triage_groq_json_repair():
     assert result["root_cause"] == "Tax_ID missing"
 
 
+# Day 11 — the guide names these 4 exact malformed-JSON shapes as the
+# mandatory blocker check ("Run every fallback path including Groq JSON
+# repair... fix ALL failures before Day 12"). Each is tested against a
+# distinct worker_id so the diagnosis cache (30 min TTL) can't mask a
+# real repair failure behind a hit from an earlier test in this file.
+
+def test_triage_groq_missing_closing_brace_is_repaired():
+    """Malformed format 1/3: LLM output truncated before the closing
+    brace (e.g. hit max_tokens mid-response). Real diagnosis must be
+    recovered, not discarded for the generic heuristic fallback."""
+    agent = TriageAgent()
+    malformed = '{"root_cause": "Field Tax_ID not found", "fix_type": "SCHEMA_MISMATCH", "affected_field": "Tax_ID", "confidence": 0.91'
+    event = {**LOOP_EVENT, "worker_id": "worker-11d", "error_hash": "missing_brace"}
+    with patch.object(agent.nemotron_client, "chat", side_effect=Exception("down")):
+        with patch.object(agent.groq_client, "chat", return_value=malformed):
+            result = agent.diagnose(event, LOG_LINES)
+    assert result["root_cause"] == "Field Tax_ID not found"
+    assert result["fallback_origin"] == "groq"
+
+
+def test_triage_groq_plain_text_falls_through_to_heuristic():
+    """Malformed format 3/3: no JSON at all in the response — nothing to
+    repair, must fall through to the rule-based heuristic without
+    raising or crashing the Triage Agent."""
+    agent = TriageAgent()
+    malformed = (
+        "The root cause is that Field Tax_ID is missing from the new "
+        "invoice format. Confidence: 91%."
+    )
+    logs = ["Error: Field 'Tax_ID' not found in schema"]
+    event = {**LOOP_EVENT, "worker_id": "worker-11e", "error_hash": "plain_text"}
+    with patch.object(agent.nemotron_client, "chat", side_effect=Exception("down")):
+        with patch.object(agent.groq_client, "chat", return_value=malformed):
+            result = agent.diagnose(event, logs)
+    assert result["fallback_origin"] == "rule_based_heuristic"
+    assert result["fix_type"] == "SCHEMA_MISMATCH"
+
+
+def test_triage_groq_nested_markdown_fence_is_repaired():
+    """Malformed format 4/4 (extra case from the guide's worked examples):
+    fenced block without a 'json' language tag."""
+    agent = TriageAgent()
+    malformed = 'Here is the analysis:\n\n```\n{\n "root_cause": "missing field"\n}\n```'
+    event = {**LOOP_EVENT, "worker_id": "worker-11f", "error_hash": "nested_markdown"}
+    with patch.object(agent.nemotron_client, "chat", side_effect=Exception("down")):
+        with patch.object(agent.groq_client, "chat", return_value=malformed):
+            result = agent.diagnose(event, LOG_LINES)
+    assert result["root_cause"] == "missing field"
+    assert result["fallback_origin"] == "groq"
+
+
 def test_triage_groq_to_heuristic():
     agent = TriageAgent()
     logs = ["Error: Field 'Tax_ID' not found in schema"]

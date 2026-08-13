@@ -353,3 +353,75 @@ the live NVIDIA API) is N/A for this project — cuOpt is already skipped
 project-wide per the Day 4-5 decision above; nothing to verify there.
 
 Full backend suite: 80 passed, 2 skipped.
+
+## Day 11 Status — Fallback Chain Unit Tests + Caching Integration (Nipun & Rashi)
+
+**Scope:** Nipun's guide names 4 exact malformed-Groq-JSON shapes as the
+mandatory blocker check for Day 11 ("fix ALL failures before Day 12"):
+missing closing brace, markdown code block, plain text, nested markdown
+fence. Rashi's guide's other Day-11 item (cuOpt live schema verification)
+is documented as N/A above and in `docs/cuopt_schema_verified.md`; her
+Circuit Breaker Panel UI item is also N/A here — Tushar already owns and
+built `CircuitBreakerPanel.tsx` (Day 6); building a second one would be a
+duplicate, not a fix. Both guides converge on the same real work: run and
+harden `test_fallback_chains.py`.
+
+### Real gap found and fixed
+**`repair_json()` couldn't actually repair the "missing closing brace"
+case** — the exact shape the guide names first (`{"root_cause": "...",
+"confidence": 0.91` — LLM output truncated before the closing brace,
+e.g. hit `max_tokens` mid-response). Checked directly against the real
+implementation: it raised `ValueError` instead of repairing, silently
+discarding the LLM's actual diagnosis and falling all the way through to
+the generic rule-based heuristic. Not a crash (the outer `try/except` in
+`TriageAgent.diagnose()` already catches this), but a real quality
+regression the guide explicitly calls for fixing. Added a brace-balancing
+repair layer to `sentinel/fallback/json_repair.py` — counts `{` vs `}`
+and appends what's missing before falling through to the markdown/blob
+extraction layers. Verified against all 4 named shapes directly:
+
+| Malformed shape | Before fix | After fix |
+|---|---|---|
+| Missing closing brace | Raised → heuristic (real diagnosis lost) | Repaired → real diagnosis recovered |
+| Markdown code block (` ```json `) | Already worked | Unchanged |
+| Plain text, no JSON | Raised → heuristic (correct by design) | Unchanged |
+| Nested/untagged fence (` ``` ` no `json` tag) | Already worked | Unchanged |
+
+Added dedicated tests for all 4 shapes to `test_fallback_chains.py`
+(`test_triage_groq_missing_closing_brace_is_repaired`,
+`test_triage_groq_plain_text_falls_through_to_heuristic`,
+`test_triage_groq_nested_markdown_fence_is_repaired`, plus the
+pre-existing markdown-fence test) — each against a distinct `worker_id`
+so the 30-min diagnosis cache can't mask a real repair failure behind a
+cache hit from an earlier test.
+
+### Verified, no fix needed
+- Sentinel fallback (NIM -> sentence-transformers -> hash), Optimization
+  fallback (OR-Tools -> greedy round-robin), Remediation fallback
+  (wrapper timeout -> flagged mock) — all already covered and passing.
+- Caching layer integration at the real entry points (`detect_loop()`,
+  `diagnose()` called twice with identical input hits the cache, second
+  call makes zero API calls, `fallback_origin` survives on the cached
+  hit) — covered by `test_day11_cache_circuit_integration.py` (added
+  during Shreshtha's Day 11, same shared codebase).
+- Circuit Breaker Panel real-time status from the live backend — same
+  file, same verification; nothing Nipun/Rashi-specific left to check
+  beyond what's already confirmed.
+
+Full backend suite: 84 passed, 2 skipped (`test_fallback_chains.py`:
+10 passed, 1 skipped by design — no nvidia-nat integration exists to
+fall back from).
+
+### One manual step remaining
+Everything above is verified against the local backend directly. The one
+piece that's inherently a visual check, not something completable from
+here: with the dashboard actually connected to Shreshtha's live backend
+over LAN (same `.env.local` setup from Day 9/10), open the Circuit
+Breaker Panel in a browser and confirm the 5 service dots render the
+right colors in real time — green/closed at rest, red/open after 3
+induced failures on a service, yellow/half-open after the 60s window,
+back to green after a successful probe. The backend-side correctness of
+every one of those transitions is already proven by
+`test_day11_cache_circuit_integration.py`'s 4 circuit-status tests; this
+step is only confirming the browser renders what the endpoint already
+correctly reports.

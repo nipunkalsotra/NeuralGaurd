@@ -15,7 +15,18 @@ def repair_json(raw_text: str) -> dict:
     except json.JSONDecodeError:
         pass
 
-    # Layer 2: extract from markdown/code blocks
+    # Layer 2: unbalanced braces (LLM output truncated before the closing
+    # brace, e.g. hit max_tokens mid-response) — append what's missing and
+    # retry, rather than discarding the LLM's actual diagnosis for the
+    # generic rule-based heuristic.
+    open_count, close_count = raw_text.count("{"), raw_text.count("}")
+    if open_count > close_count:
+        try:
+            return json.loads(raw_text + "}" * (open_count - close_count))
+        except json.JSONDecodeError:
+            pass
+
+    # Layer 3: extract from markdown/code blocks
     match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
     if match:
         try:
@@ -23,7 +34,7 @@ def repair_json(raw_text: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    # Layer 3: find first {...} blob anywhere in the text
+    # Layer 4: find first {...} blob anywhere in the text
     match = re.search(r"\{.*\}", raw_text, re.DOTALL)
     if match:
         try:
