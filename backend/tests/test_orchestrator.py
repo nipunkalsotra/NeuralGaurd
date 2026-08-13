@@ -180,6 +180,35 @@ async def test_full_fsm_verified_false_escalates_no_retry(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_loop_suspected_after_escalation_resets_instead_of_crashing(orchestrator):
+    """Day 11 fix: ESCALATED is a deliberate terminal state (no legal
+    outgoing transition), but a brand-new fault injected against a worker
+    that previously escalated must start a fresh incident, not raise.
+    Regression test for the crash caught by
+    test_day11_cache_circuit_integration.py's repeated-injection test."""
+    await orchestrator.transition(
+        "worker-9", WorkerState.LOOP_SUSPECTED,
+        trigger_event="test", agent_name="test",
+    )
+    await orchestrator.transition(
+        "worker-9", WorkerState.DIAGNOSING,
+        trigger_event="test", agent_name="test",
+    )
+    await orchestrator.transition(
+        "worker-9", WorkerState.ESCALATED,
+        trigger_event="test", agent_name="test",
+    )
+    assert orchestrator.get_state("worker-9") == WorkerState.ESCALATED
+
+    loop_event = {
+        "worker_id": "worker-9", "similarity": 0.95, "consecutive_count": 3,
+    }
+    await orchestrator.event_bus.publish("LOOP_SUSPECTED", loop_event)
+
+    assert orchestrator.get_state("worker-9") == WorkerState.REMEDIATING
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_consumes_optimization_complete(orchestrator):
     """Day 10 fix: OPTIMIZATION_COMPLETE previously had no subscriber at
     all in production — the Optimization Agent's real, computed ReroutePlan

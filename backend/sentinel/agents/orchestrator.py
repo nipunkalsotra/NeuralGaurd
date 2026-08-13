@@ -123,6 +123,23 @@ class Orchestrator:
     async def on_loop_suspected(self, event: dict) -> None:
         worker_id = event["worker_id"]
 
+        # A fresh fault injection targeting a worker that previously
+        # escalated (a terminal state — see VALID_TRANSITIONS) would
+        # otherwise raise here and crash the publish, since ESCALATED has
+        # no legal outgoing transition. Re-injecting a fault is meant to
+        # start a brand-new incident regardless of what the worker's last
+        # cycle ended in, so treat it as an implicit reset back to HEALTHY
+        # first — HEALTHY -> LOOP_SUSPECTED is always legal. No-op for
+        # workers already in HEALTHY/RESUMED, where the transition below
+        # is legal anyway.
+        current = self.get_state(worker_id)
+        if current not in (WorkerState.HEALTHY, WorkerState.RESUMED):
+            logger.info(
+                "[%s] New fault injected while in %s — resetting to HEALTHY "
+                "before re-detecting", worker_id, current,
+            )
+            self.worker_states[worker_id] = WorkerState.HEALTHY
+
         await self.transition(
             worker_id, WorkerState.LOOP_SUSPECTED,
             trigger_event="LOOP_SUSPECTED", agent_name="SentinelAgent",

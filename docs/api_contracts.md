@@ -307,3 +307,49 @@ patterns (field-name drift, timestamp format drift, type drift).
 
 Full backend suite: 71 passed, 2 skipped. Wrapper suite: 6 passed.
 Dashboard: clean `tsc -b && vite build`, no new lint issues.
+
+## Day 11 Status — Caching Layer Integration + Circuit Breaker Panel (Shreshtha)
+
+**Scope:** per Shreshtha's Day-11 guide — both caches (`embedding_cache`,
+`diagnosis_cache`) and the per-service `circuit_registry` were already
+wired into their owning agents ahead of schedule (Days 1, 4, 6, 8; see
+`docs/cache_schema.md`). Day 11's real job was closing the two specific
+verification gaps her guide calls out as blockers, not building new
+integration code.
+
+### Verified
+1. `SentinelAgent.detect_loop()` and `TriageAgent.diagnose()` called
+   twice with identical input hit the cache the second time — confirmed
+   with the actual entry points, not just the lower-level `embed()`/
+   `diagnose()` unit tests that already existed. `fallback_origin`
+   survives correctly on the cached (second) call, not just the first.
+2. `GET /api/circuit-status` reflects real backend failures live —
+   OPEN after 3 failures, HALF_OPEN after the 60s window, CLOSED after a
+   successful probe — verified through the actual HTTP layer the
+   dashboard polls, not just the `CircuitBreaker` class in isolation.
+   `CircuitBreakerPanel.tsx` already polls this endpoint every 2s and
+   overrides `cuOpt` to a static "Unused" card, consistent with the
+   project-wide decision to skip cuOpt.
+
+### Real gap found and fixed
+**Re-injecting a fault on a worker already in `ESCALATED` crashed the
+`/demo/inject` endpoint (500) instead of starting a fresh incident.**
+`ESCALATED` is a deliberate terminal state in `VALID_TRANSITIONS` (no
+retry loop, by design), but `Orchestrator.on_loop_suspected` tried to
+transition straight to `LOOP_SUSPECTED` again regardless of the worker's
+current state, which is illegal from `ESCALATED` and raised inside
+`EventBus.publish`'s `asyncio.gather`, uncaught. Since `App.tsx`'s BREAK
+IT button always targets the same hardcoded `worker-3`, this was directly
+reachable in the live demo: escalate once, press BREAK IT again, crash.
+Fixed by treating a new fault injection as an implicit reset to `HEALTHY`
+for any worker not already in `HEALTHY`/`RESUMED`, before the normal
+`HEALTHY -> LOOP_SUSPECTED` transition — a fresh fault starts a fresh
+incident. Caught by
+`test_repeated_fault_injection_still_detects_loop_with_cache_warm` in
+`backend/tests/test_day11_cache_circuit_integration.py`.
+
+Rashi's Day-11 cuOpt schema verification (30-min mandatory check against
+the live NVIDIA API) is N/A for this project — cuOpt is already skipped
+project-wide per the Day 4-5 decision above; nothing to verify there.
+
+Full backend suite: 80 passed, 2 skipped.
