@@ -743,3 +743,162 @@ gate before Day 14.
 
 Full backend suite: 111 passed, 2 skipped. Dashboard: clean
 `npm run lint` and `npm run build`, main bundle 485.58kB.
+
+## Day 14 Status — Demo Day Rehearsal support
+
+**Scope:** Day 14 across all four guides is overwhelmingly a live,
+multi-person, multi-machine rehearsal (Nipun narrating, Shreshtha
+hosting, Tushar operating the dashboard, Rashi monitoring) — none of
+that is something to build. Two genuinely scriptable gaps existed in
+the guides' pre-demo checklists, both closed:
+
+### `scripts/verify_audit_chain.py` (Rashi)
+Her checklist names "Hash chain verification script passes" as a
+pre-demo check, but no standalone script existed — `verify_chain()` was
+only ever called from inside the test suite. Built one: loads the real
+audit log via `TrustChainLogger`, reports PASS/FAIL, and on failure
+walks the chain independently to report exactly which record (line,
+worker_id, timestamp) broke it — a bare bool wouldn't be enough to
+debug anything 30 minutes before a demo.
+
+**Running it immediately found a real, reproducible chain fork** — not
+a hypothetical. Root-caused properly rather than assumed: wrote a
+targeted repro driving genuine concurrent multi-worker dispatch through
+the real `Orchestrator`/`OptimizationAgent` (the actual "Day 5
+concurrency guarantee" pattern) with an artificial delay to force a real
+`await` gap — that repro produced a **valid** chain, ruling out an
+async/concurrency bug in the application code itself. The real cause:
+`test_orchestrator.py`'s `orchestrator` fixture, and two tests in
+`test_day12_shreshtha_metrics.py`, constructed `Orchestrator()` without
+passing `audit_logger=...` — silently falling through to the same
+*default* file the real `fault_injection._orchestrator` singleton also
+writes to. That singleton caches its own `previous_hash` in memory and
+has no way to know another instance advanced the file's actual tail in
+the meantime — so its next write forks. Not a production bug (there's
+only ever one real Orchestrator instance in the actual app), but a real
+test-isolation gap, same class as the Day 9 port race and Day 12
+circuit-breaker leak. Fixed both call sites to use `tmp_path`-isolated
+loggers like every other test already does; confirmed with 4 consecutive
+full suite runs, chain intact every time. The corrupted local
+`audit_logs/audit.jsonl` (gitignored, never committed — purely this
+machine's accumulated test/rehearsal noise) was archived, not deleted,
+each time it was found broken.
+
+### `scripts/pre_demo_check.py` (Shreshtha + Rashi)
+Both guides list an overlapping set of "run this 30-60 min before demo"
+checks. Consolidated the ones that are genuinely server-side/scriptable
+into one script, run for real against live backend + wrapper processes:
+`/health`, WebSocket reachability, `/demo/inject`, `/api/circuit-status`
+(presence of all 5 services — not their color), `/api/metrics`, audit
+log is non-empty, the hash chain script above, wrapper `/v1/status`, and
+one real `/v1/remediate` call. All 9 passed on a clean run. The script
+also prints, rather than silently omits, the checklist items that are
+inherently visual and can't be scripted (Similarity Graph rendering,
+Circuit Breaker Panel dot *colors*, Health Indicators, Audit Log Stream,
+Report Card modal) — a script claiming to verify those without a real
+browser would be a false assurance, not a real check.
+
+### Everything else — genuinely manual
+Full dress rehearsal, backup-plan live test (kill NemoClaw mid-run,
+confirm the team reacts correctly), the 30s mock-mode backup video,
+1-hour stability soak with `htop`, and final DevTools checks all require
+an actual browser, actual screen recording, actual multiple people on
+actual separate machines. Nothing here was skipped by oversight — it's
+categorically outside what a single assistant session can do, and no
+guide assigns it as anything other than a live team exercise.
+
+Full backend suite: 111 passed, 2 skipped (verified across 4 consecutive
+runs for the audit-chain fix specifically). Dashboard: clean
+`npm run lint` and `npm run build`.
+
+## Day 15 Status — Polish, Documentation & v1.0 (Phase 1 complete)
+
+**Scope:** all four guides converge on one shared deliverable set —
+README, API docs, architecture diagrams, resume bullets, two grep
+verifications, a clean-machine docker-compose test, and the v1.0 tag —
+plus one person-specific piece (Tushar's dashboard code cleanup).
+
+### Verification greps
+Zero `agentiq` matches anywhere. Zero real `openai` matches — the two
+textual hits (`token_counter.py`'s "OpenAI-compatible" comment describing
+API shape, and Groq's own real endpoint path
+`api.groq.com/openai/v1/...`) are both legitimate; neither is a leftover
+reference to actually using OpenAI's service, and no `openai` package
+appears in any requirements file.
+
+### Tushar — dashboard code cleanup
+Removed the two plain `console.log` calls that weren't error/warning
+diagnostics (kept every `console.warn`/`console.error`, which are real
+diagnostic signal, not debug noise). `tsc --noEmit` and
+`eslint src/ --ext .ts,.tsx` both already ran clean. The "mock dev
+toolbar buttons" the guide names ("Show Mock Triage Card", "Show
+Fallback Variant", "Show Post-Heal Report Card") were hidden behind a
+new `VITE_DEBUG_CONTROLS` flag rather than deleted — they're Day 13's
+documented Backup Plan mechanism, and removing them outright would have
+regressed that.
+
+### Docker-compose clean-build test (Shreshtha's blocker, run for real)
+Ran `docker compose --profile full-stack build` and `up` for real, not
+assumed. Two genuine findings:
+1. **Build succeeded but took 10:12**, 12 seconds over the guide's
+   <10-minute target — dominated by installing torch/transformers/
+   sentence-transformers (~191s alone). Real number from this machine;
+   not fabricated to fit the target.
+2. **The backend container failed to start on the first attempt** —
+   `SentenceTransformer("all-MiniLM-L6-v2")` downloads from
+   huggingface.co at process-startup time (no weights baked into the
+   image), and that hostname failed to resolve from inside a container
+   in this environment specifically (confirmed by testing: Docker Hub
+   itself resolved fine from a throwaway container, `huggingface.co`
+   didn't — and the same hostname resolved fine from the host directly,
+   outside Docker). Fixed by adding explicit DNS servers
+   (`dns: [8.8.8.8, 1.1.1.1]`) to the backend service in
+   `docker-compose.yml` — confirmed by rebuilding and re-testing: all 3
+   containers started, and a real fault injection ran end-to-end through
+   the actual containerized stack (not the bare-metal dev setup used for
+   every previous day's testing).
+
+Full findings, plus the architectural question this surfaced (eager
+model loading gives a *fallback* the same network dependency as the
+thing it's supposed to fall back from) in the README's Future Work
+section.
+
+### Documentation written
+- `README.md` — full rewrite: architecture/workflow/fallback-chain/data-flow
+  diagrams (Mermaid, each one individually rendered with `mermaid-cli`
+  to confirm it actually parses, not just visually inspected — found
+  and fixed 2 real syntax errors this way: a `par` block missing its
+  `and` separator, and a participant alias `Opt` colliding with
+  Mermaid's reserved `opt` keyword), setup instructions, project
+  structure, API summary, team, known limitations, and Future Work.
+- `docs/architecture.md` — the full diagram set the README summarizes.
+- `docs/api_reference.md` — every real endpoint (backend + wrapper +
+  WebSocket envelope), every example response captured from an actual
+  running instance, not guessed.
+- `docs/resume_bullets.md` — all 4 people, cross-checked against what's
+  actually in the repo.
+- `docs/release_notes_v1.0.md` — drafted for the GitHub release; not
+  published (that's the tag push, see below).
+- `dashboard/README.md` — setup, component table, remote-backend
+  connection steps, demo flow, troubleshooting table.
+- `docs/assets/hero-animation.svg` — a real, custom-built animated SVG
+  (SMIL, no external dependency) showing the FSM's actual state colors
+  cycling through a healing loop. Not a fabricated demo recording —
+  this repo has no actual screen capture of a live demo run to show,
+  and claiming otherwise would be dishonest; the animation is clearly
+  a diagram, not a recording.
+
+### v1.0 tag — prepared, not pushed
+Per this session's standing convention, all commits/tags/pushes are the
+user's own action. Prepared and left ready:
+```
+git tag -a v1.0 -m "Phase 1 complete"
+git push origin v1.0
+```
+Release notes drafted in `docs/release_notes_v1.0.md`, ready to paste
+into the GitHub release UI after the tag is pushed.
+
+Full backend suite: 111 passed, 2 skipped. Dashboard: clean
+`npm run lint` and `npm run build`, bundle 484.60kB. All 7 Mermaid
+diagrams individually validated. Real docker-compose clean-build +
+full-stack-up + end-to-end fault injection all confirmed working.

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" width="900" height="260">
+  <defs>
+    <style>
+      text { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+      .label { fill: #94a3b8; font-size: 13px; font-weight: 600; }
+      .edge { stroke: #334155; stroke-width: 2; fill: none; }
+      .flow { stroke: #fbbf24; stroke-width: 2.5; fill: none; stroke-dasharray: 6 10; }
+    </style>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="900" height="260" fill="url(#bg)"/>
+  <text x="450" y="34" text-anchor="middle" fill="#e2e8f0" font-size="20" font-weight="700">AI Factory Sentinel — Self-Healing Cycle</text>
+
+  <!-- edges -->
+  <path class="edge" d="M 150,150 L 300,150"/>
+  <path class="edge" d="M 300,150 L 450,150"/>
+  <path class="edge" d="M 450,150 L 600,150"/>
+  <path class="edge" d="M 600,150 L 750,150"/>
+  <path class="edge" d="M 300,150 L 300,90"/>
+
+  <!-- flowing pulse along the main path -->
+  <path class="flow" d="M 150,150 L 750,150">
+    <animate attributeName="stroke-dashoffset" from="0" to="-160" dur="2.4s" repeatCount="indefinite"/>
+  </path>
+
+  <!-- Sentinel -->
+  <circle cx="150" cy="150" r="30" fill="#0f172a" stroke="#10b981" stroke-width="3">
+    <animate attributeName="stroke" values="#10b981;#fbbf24;#10b981" keyTimes="0;0.15;1" dur="6s" repeatCount="indefinite"/>
+  </circle>
+  <text x="150" y="196" class="label" text-anchor="middle">Sentinel</text>
+
+  <!-- Orchestrator -->
+  <circle cx="300" cy="150" r="30" fill="#0f172a" stroke="#10b981" stroke-width="3">
+    <animate attributeName="stroke" values="#10b981;#fbbf24;#60a5fa;#10b981" keyTimes="0;0.15;0.35;1" dur="6s" repeatCount="indefinite"/>
+  </circle>
+  <text x="300" y="196" class="label" text-anchor="middle">Orchestrator</text>
+
+  <!-- Optimization (branch) -->
+  <circle cx="300" cy="90" r="24" fill="#0f172a" stroke="#f97316" stroke-width="2.5" opacity="0.85">
+    <animate attributeName="opacity" values="0.85;0.35;0.85" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <text x="300" y="52" class="label" text-anchor="middle">Optimization</text>
+
+  <!-- Triage -->
+  <circle cx="450" cy="150" r="30" fill="#0f172a" stroke="#60a5fa" stroke-width="3">
+    <animate attributeName="stroke" values="#60a5fa;#f97316;#60a5fa" keyTimes="0;0.5;1" dur="6s" repeatCount="indefinite"/>
+  </circle>
+  <text x="450" y="196" class="label" text-anchor="middle">Triage</text>
+
+  <!-- Remediation -->
+  <circle cx="600" cy="150" r="30" fill="#0f172a" stroke="#f97316" stroke-width="3">
+    <animate attributeName="stroke" values="#f97316;#8b5cf6;#f97316" keyTimes="0;0.65;1" dur="6s" repeatCount="indefinite"/>
+  </circle>
+  <text x="600" y="196" class="label" text-anchor="middle">Remediation</text>
+
+  <!-- Resumed -->
+  <circle cx="750" cy="150" r="30" fill="#0f172a" stroke="#8b5cf6" stroke-width="3">
+    <animate attributeName="stroke" values="#8b5cf6;#10b981;#10b981" keyTimes="0;0.8;1" dur="6s" repeatCount="indefinite"/>
+  </circle>
+  <text x="750" y="196" class="label" text-anchor="middle">Resumed</text>
+
+  <text x="450" y="235" text-anchor="middle" fill="#64748b" font-size="12">HEALTHY → LOOP_SUSPECTED → DIAGNOSING → REMEDIATING → VERIFYING → RESUMED</text>
+</svg>

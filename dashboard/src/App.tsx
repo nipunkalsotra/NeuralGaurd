@@ -133,6 +133,14 @@ const MOCK_DIAGNOSIS_FALLBACK: DiagnosisResult = {
 const BACKEND_WS_URL = import.meta.env.VITE_WS_URL as string | undefined;
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
+// Day 15 cleanup: the 3 "Show Mock ..." buttons inject fake data on
+// demand — genuinely useful as Day 13's Backup Plan B/C mechanism when
+// the real backend is unreachable, but they don't belong in the header
+// during the actual live demo (they read as "here's how I'd fake it").
+// Hidden by default; set VITE_DEBUG_CONTROLS=true locally to bring them
+// back for development/rehearsal.
+const DEBUG_CONTROLS = import.meta.env.VITE_DEBUG_CONTROLS === "true";
+
 export default function App() {
   const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(null);
   const [reportCard, setReportCard] = useState<ReportCardMetrics | null>(null);
@@ -244,24 +252,28 @@ export default function App() {
           AI Factory Sentinel
         </span>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setDiagnosis(MOCK_DIAGNOSIS_NORMAL)}
-            className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
-          >
-            Show Mock Triage Card
-          </button>
-          <button
-            onClick={() => setDiagnosis(MOCK_DIAGNOSIS_FALLBACK)}
-            className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
-          >
-            Show Fallback Variant
-          </button>
-          <button
-            onClick={() => setReportCard(PLACEHOLDER_METRICS)}
-            className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
-          >
-            Show Post-Heal Report Card
-          </button>
+          {DEBUG_CONTROLS && (
+            <>
+              <button
+                onClick={() => setDiagnosis(MOCK_DIAGNOSIS_NORMAL)}
+                className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
+              >
+                Show Mock Triage Card
+              </button>
+              <button
+                onClick={() => setDiagnosis(MOCK_DIAGNOSIS_FALLBACK)}
+                className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
+              >
+                Show Fallback Variant
+              </button>
+              <button
+                onClick={() => setReportCard(PLACEHOLDER_METRICS)}
+                className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
+              >
+                Show Post-Heal Report Card
+              </button>
+            </>
+          )}
           <button
             onClick={() => setShowSimilarity((v) => !v)}
             className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"

@@ -40,7 +40,6 @@ export function useWebSocket<T = unknown>({ url, onMessage, mockFallback }: UseW
         // (e.g. during a page reload) permanently disables the fallback
         // for the rest of the session after the first reconnect.
         mockStarted.current = false;
-        console.log("WebSocket connected:", url);
       };
 
       ws.onmessage = (e) => {

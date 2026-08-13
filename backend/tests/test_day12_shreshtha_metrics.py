@@ -85,14 +85,22 @@ def test_throughput_tracker_baseline_when_no_orchestrator():
     assert ThroughputTracker(None).current_pct() == 100.0
 
 
-def test_throughput_tracker_baseline_when_no_incidents_yet():
-    orch = Orchestrator(event_bus=EventBus())
+def test_throughput_tracker_baseline_when_no_incidents_yet(tmp_path):
+    # Day 14 fix: Orchestrator() with no audit_logger defaults to the
+    # SHARED production audit_logs/audit.jsonl file — the exact
+    # test-isolation gap that caused a real, reproducible hash-chain
+    # fork against fault_injection._orchestrator's cached previous_hash
+    # (see test_orchestrator.py's orchestrator fixture for the full
+    # writeup). Isolate with tmp_path like every other test here already does.
+    audit_logger = TrustChainLogger(log_file=str(tmp_path / "audit.jsonl"))
+    orch = Orchestrator(event_bus=EventBus(), audit_logger=audit_logger)
     assert ThroughputTracker(orch).current_pct() == 100.0
 
 
 @pytest.mark.asyncio
-async def test_throughput_tracker_reflects_real_reroute_plan():
-    orch = Orchestrator(event_bus=EventBus())
+async def test_throughput_tracker_reflects_real_reroute_plan(tmp_path):
+    audit_logger = TrustChainLogger(log_file=str(tmp_path / "audit.jsonl"))
+    orch = Orchestrator(event_bus=EventBus(), audit_logger=audit_logger)
     await orch.event_bus.publish("OPTIMIZATION_COMPLETE", {
         "worker_id": "worker-12a", "assignments": [], "excluded_workers": [],
         "projected_throughput_pct": 82.5, "solver_used": "or-tools",

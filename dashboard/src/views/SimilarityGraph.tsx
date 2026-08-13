@@ -60,7 +60,6 @@ function useSimilarityStream(wsUrl?: string) {
         const ws = new WebSocket(wsUrl);
         socketRef.current = ws;
 
-        ws.onopen = () => console.log("Similarity stream connected:", wsUrl);
         ws.onmessage = (e) => {
           try {
             const parsed = JSON.parse(e.data);

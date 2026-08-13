@@ -31,9 +31,24 @@ def mock_triage_agent():
 
 
 @pytest.fixture
-def orchestrator(mock_triage_agent):
+def orchestrator(mock_triage_agent, tmp_path):
+    # Day 14 fix: this fixture never passed audit_logger, so every test
+    # using it silently fell through to Orchestrator's default —
+    # TrustChainLogger() with NO log_file, which resolves to the same
+    # shared production file (backend/audit_logs/audit.jsonl) the real
+    # fault_injection._orchestrator singleton also uses by default.
+    # Found via a genuine, reproducible chain-fork: a fixture-based test
+    # here would write a few correctly-bootstrapped records to that
+    # shared file, then a LATER test hitting the singleton (e.g.
+    # test_day9_rashi_integration.py) would write using ITS OWN
+    # long-cached previous_hash — which had no way to know the file's
+    # tail had moved — forking the chain. Not a production bug (there's
+    # only ever one real Orchestrator instance in the actual app), but a
+    # real test-isolation gap, same class as the Day 9 port race and Day
+    # 12 circuit-breaker leak.
     bus = EventBus()
-    return Orchestrator(event_bus=bus, triage_agent=mock_triage_agent)
+    audit_logger = TrustChainLogger(log_file=str(tmp_path / "audit.jsonl"))
+    return Orchestrator(event_bus=bus, triage_agent=mock_triage_agent, audit_logger=audit_logger)
 
 @pytest.mark.asyncio
 async def test_diagnosis_complete_event_published(orchestrator):

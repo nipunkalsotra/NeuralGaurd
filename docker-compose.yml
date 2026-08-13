@@ -13,6 +13,19 @@ services:
       # service name, not localhost. Without this, every remediation call
       # gets connection-refused and the FSM never gets past REMEDIATING.
       - WRAPPER_URL=http://wrapper:8081
+    # Day 15: SentinelAgent's sentence-transformers fallback model
+    # downloads from huggingface.co the first time a container starts
+    # (no weights baked into the image). Found via a real clean-machine
+    # docker-compose test: some Docker network configs' default embedded
+    # DNS resolver fails on that specific hostname (confirmed by testing
+    # from inside a throwaway container — Docker Hub itself resolved
+    # fine, huggingface.co didn't, until an explicit DNS server was set)
+    # even though the same host resolves it fine outside Docker. An
+    # explicit public DNS server is a harmless default either way and a
+    # real fix where it matters.
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - ./backend:/app
       - audit_logs:/app/audit_logs
