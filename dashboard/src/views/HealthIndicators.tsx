@@ -24,9 +24,22 @@ const LABELS: Record<AgentId, string> = {
   orchestrator: "Orchestrator",
 };
 
+// Day 12: same per-origin styling as AgentOrb.tsx (kept in sync
+// manually — small enough duplication that a shared constant would be
+// more indirection than it saves for two files).
+const FALLBACK_BADGE_STYLE: Record<string, string> = {
+  groq: "bg-yellow-400/20 text-yellow-300 border-yellow-400/50",
+  rule_based_heuristic: "bg-yellow-400/20 text-yellow-300 border-yellow-400/50",
+  "sentence-transformers": "bg-blue-400/20 text-blue-300 border-blue-400/50",
+  "or-tools": "bg-orange-400/20 text-orange-300 border-orange-400/50",
+  greedy_round_robin: "bg-orange-400/20 text-orange-300 border-orange-400/50",
+  mock: "bg-slate-400/20 text-slate-300 border-slate-400/50",
+};
+
 function StatusCard({ id }: { id: AgentId }) {
   const agent = useDashboardStore((s) => s.agents[id]);
   const rgb = STATUS_COLOR[agent.state];
+  const badgeStyle = agent.fallbackOrigin ? FALLBACK_BADGE_STYLE[agent.fallbackOrigin] : undefined;
 
   return (
     <div className="flex flex-col items-center gap-2 p-4 rounded-lg bg-slate-900/40 border border-slate-800">
@@ -43,19 +56,13 @@ function StatusCard({ id }: { id: AgentId }) {
       <span className="text-xs font-medium text-slate-300">{LABELS[id]}</span>
       <span className="text-[10px] uppercase tracking-wider text-slate-500">{agent.state}</span>
 
-      {agent.fallbackActive && (
+      {agent.fallbackOrigin && badgeStyle && (
         <motion.span
-          className="text-[9px] px-2 py-0.5 rounded-full bg-yellow-400/20 text-yellow-300 border border-yellow-400/50"
-          animate={{
-            boxShadow: [
-              "0 0 4px rgba(250,204,21,0.4)",
-              "0 0 12px rgba(250,204,21,0.7)",
-              "0 0 4px rgba(250,204,21,0.4)",
-            ],
-          }}
+          className={`text-[9px] px-2 py-0.5 rounded-full border ${badgeStyle}`}
+          animate={{ opacity: [0.6, 1, 0.6] }}
           transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
         >
-          fallback
+          {agent.fallbackOrigin}
         </motion.span>
       )}
     </div>

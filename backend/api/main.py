@@ -21,6 +21,7 @@ from api.websocket import router as websocket_router
 from api.fault_injection import router as fault_injection_router
 from api.circuit_status import router as circuit_status_router
 from api.stream_relay import router as stream_relay_router
+from api.metrics import router as metrics_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sentinel.main")
@@ -54,6 +55,7 @@ app.include_router(websocket_router)
 app.include_router(fault_injection_router)
 app.include_router(circuit_status_router)
 app.include_router(stream_relay_router)
+app.include_router(metrics_router)
 
 
 @app.on_event("startup")

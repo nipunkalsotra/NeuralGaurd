@@ -48,12 +48,18 @@ def test_diagnose_nemotron_fails_falls_back_to_groq(agent):
 # Replace this test
 
 def test_diagnose_both_fail_returns_unknown(agent):
+    # Day 12: LOG_LINES ("Error: Tax_ID not found") used to be this test's
+    # "doesn't match any pattern" case, but that was itself the exact bug
+    # fixed on Day 12 — the SCHEMA_MISMATCH pattern required a literal
+    # "field" prefix, so a perfectly ordinary "X not found" message went
+    # unclassified. It's correctly caught now (see test_triage_agent's
+    # heuristic pattern tests), so this test needs genuinely unmatchable
+    # text to still exercise the "no pattern at all" fallback.
+    unmatchable_logs = ["Worker produced output but no error was logged"]
     with patch.object(agent.nemotron_client, "chat", side_effect=Exception("down")):
         with patch.object(agent.groq_client, "chat", side_effect=Exception("down")):
-            result = agent.diagnose(LOOP_EVENT, LOG_LINES)
+            result = agent.diagnose(LOOP_EVENT, unmatchable_logs)
 
-    # LOG_LINES doesn't match any known heuristic pattern, so this falls
-    # through to the heuristic's own "no match" case.
     assert result["confidence"] == 0.0
     assert result["fallback_used"] is True
     assert result["fallback_origin"] == "rule_based_heuristic"

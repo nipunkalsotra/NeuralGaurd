@@ -13,6 +13,14 @@ EventBus the Orchestrator and OptimizationAgent subscribe to, so a real
 fault genuinely drives Triage -> Remediation and Optimization (dispatched
 concurrently, per master doc Section 6) -- closes the "fault-injection-to-
 Orchestrator wiring" gap noted in docs/api_contracts.md's Day 8 status.
+Day 12: fixed the synthetic log line each fault produces — it used to
+fall back to a bare keyword (e.g. "Error: latency (fault: latency)")
+that never matched RuleBasedHeuristic's regex patterns for ANY of the 4
+fault types. Harmless whenever Nemotron or Groq are reachable (an LLM
+reads natural language fine), but if BOTH are down during a live demo,
+every fault type would misdiagnose as "unknown" and escalate instead of
+healing — exactly the resilience path Day 12's chaos testing exists to
+validate. Each fault now carries a realistic `log_message` instead.
 """
 
 import logging
@@ -81,6 +89,10 @@ class SchemaCorruptionFault:
             "type": "schema_corruption",
             "removed_field": field,
             "error_signature": f"{field}_missing",
+            # Day 12: realistic message, not just the bare field name — see
+            # module note below on why this text actually matters, not
+            # just for log readability.
+            "log_message": f"Field '{field}' not found in invoice schema",
         }
         return {"removed_field": field}
 
@@ -92,6 +104,7 @@ class LatencyFault:
             "type": "latency",
             "delay_ms": delay_ms,
             "error_signature": "latency_injected",
+            "log_message": f"Operation timed out after {delay_ms}ms waiting for worker response",
         }
         return {"delay_ms": delay_ms}
 
@@ -103,6 +116,7 @@ class ErrorSignatureFault:
             "type": "error_signature",
             "forced_error": error,
             "error_signature": error,
+            "log_message": error,
         }
         return {"forced_error": error}
 
@@ -114,6 +128,7 @@ class ResourcePressureFault:
             "type": "resource_pressure",
             "consumed_memory_mb": memory_mb,
             "error_signature": "oom_pressure",
+            "log_message": f"Worker ran out of memory (OOM) after consuming {memory_mb}MB",
         }
         return {"consumed_memory_mb": memory_mb}
 
@@ -145,12 +160,7 @@ async def inject_fault(request: InjectRequest):
     loop_event = None
     log_line = None
     if fault:
-        error_text = (
-            fault.get("removed_field")
-            or fault.get("forced_error")
-            or fault.get("type")
-        )
-        log_line = f"Error: {error_text} (fault: {fault['type']})"
+        log_line = f"Error: {fault['log_message']} (fault: {fault['type']})"
         for _ in range(4):
             loop_event = _sentinel.detect_loop(
                 request.target, log_line, fault["error_signature"],

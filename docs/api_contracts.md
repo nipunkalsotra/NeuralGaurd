@@ -511,3 +511,136 @@ errors. Full backend suite: 86 passed, 2 skipped.
 - Screen-size and Chrome/Safari cross-browser testing from the guide's
   polish checklist are inherently manual/visual — noted, not something
   to fake a pass on from here.
+
+## Day 12 Status — Report Card Backend, Chaos Testing, Fallback Indicators, Demo Script
+
+**Scope:** all four Day-12 write-ups converge on one shared deliverable
+— the Post-Heal Report Card and the fallback-visibility work underneath
+it — plus two person-specific pieces (Rashi's chaos-scenario timing,
+Nipun's demo script). Covered together since the backend metrics work
+(Shreshtha) is a hard dependency for validating it (Nipun) and for what
+the card eventually renders (Tushar).
+
+### Shreshtha — Token Counter + Throughput Tracker + Report Card backend
+New: `sentinel/metrics/{token_counter,throughput_tracker,report_card}.py`,
+`GET /api/metrics/tokens`, `GET /api/metrics/throughput`, `GET /api/metrics`.
+Per the guide's own critical note ("must be REAL, not hardcoded"):
+- `time_to_detect`: real delta between a worker's LOOP_SUSPECTED and
+  REMEDIATING/ESCALATED audit timestamps (DIAGNOSIS_COMPLETE itself is
+  an EventBus event, not a persisted record — the transition it causes
+  is the real, persisted proxy).
+- `tokens_saved`: real Nemotron/Groq token usage now captured from each
+  response's actual `usage.total_tokens` field; cache-hit savings
+  estimated from the last real cost observed for that service (there's
+  no response to measure on a hit — using a made-up constant would be
+  less honest than reusing real, recently-observed data).
+- `throughput_maintained`: tied to `OptimizationAgent`'s real solver
+  output (`reroute_plans`), not the guide's illustrative 71%/97%
+  narrative numbers — no item-processing pipeline exists in this
+  codebase to measure "items/minute" against, so inventing one just to
+  hit those exact figures would be fabricated data, not a real metric.
+  Documented as a deliberate, honest scope decision in
+  `sentinel/metrics/throughput_tracker.py`'s module docstring.
+- `fixes_applied`/`escalations`/`fallbacks_triggered`: direct counts
+  from the real audit log — no judgment calls needed.
+- Soft-limit enforcement (guide's "force fallback methods" requirement):
+  `TriageAgent.diagnose()` now skips Nemotron once its hourly token
+  budget is exhausted, same as an open circuit breaker.
+
+### Rashi — Fault Injection Testing (End-to-End)
+**Real bug found by actually writing the end-to-end test, not assuming
+it worked:** every one of the 4 fault types' synthetic log lines failed
+to match `RuleBasedHeuristic`'s regex patterns at all — `fault_injection.py`
+degraded to a bare keyword (e.g. `"Error: latency (fault: latency)"`)
+instead of a real error message. Harmless whenever an LLM is reachable
+(natural language parses fine), but if BOTH Nemotron and Groq are down
+during a live demo — exactly the resilience path this test exists to
+validate — every fault type would misdiagnose as "unknown" and escalate
+with a useless diagnosis instead of one a human could actually act on.
+Fixed: each `Fault` class now carries a realistic `log_message`; also
+relaxed the SCHEMA_MISMATCH pattern to not require a literal "field"
+prefix (real messages often just say "X not found"). Verified all 4
+fault types now classify correctly end-to-end through the real
+`/demo/inject` endpoint with Nemotron+Groq both mocked down (confidence
+0.65 still correctly escalates rather than remediating — that's the
+heuristic's own designed ceiling, not a bug — but the escalation now
+carries an accurate diagnosis instead of "unknown"). Also fixed a real
+test-isolation leak this same file introduced: one of its tests reaches
+REMEDIATING against the shared production `RemediationAgent` singleton's
+default (dead-in-this-environment) wrapper URL, which was tripping that
+singleton's circuit breaker open and leaking into an unrelated, later
+test file — added a reset fixture, same pattern as existing
+`_reset_circuit_registry` fixtures elsewhere.
+
+### Tushar — Fallback Indicators + Post-Heal Report Card shell
+The dashboard already had full UI plumbing for a generic fallback badge
+(`fallbackActive: boolean` in the Zustand store, rendered by AgentOrb/
+WorkflowDAG/HealthIndicators) that nothing had ever set to `true` — real
+backend data was never wired through. Replaced with `fallbackOrigin:
+string | null` and wired it from the real `audit_event` stream, closing
+2 real backend gaps found in the process:
+1. `LOOP_SUSPECTED`'s audit record never carried which embedding source
+   (NIM / sentence-transformers / hash) detected the loop — no signal to
+   drive the Sentinel node's ring at all. `SentinelAgent` now tracks
+   `last_embed_origin`; `detect_loop()`'s returned event carries it.
+2. `on_optimization_complete`'s own docstring claimed it "writes it to
+   the audit trail... same as every other real transition" — it never
+   did, only logged to console. Optimization has no `WorkerState` of its
+   own, so it now writes directly via `audit_logger` + broadcasts (not
+   through `self.transition()`, which would enforce FSM legality against
+   a state that doesn't apply here) using the worker's current state for
+   both from/to — a side-channel event, not a fake FSM move.
+
+Also closed a 3rd, smaller gap for consistency: the rule-based
+heuristic's confidence (always 0.65) is always below the escalation
+threshold, so `fallback_origin="rule_based_heuristic"` could only ever
+occur on the ESCALATED (low-confidence) branch — which never forwarded
+`fallback_origin` at all before this fix, meaning that value could never
+actually reach the frontend.
+
+Verified live against the real (non-mocked) backend, not just unit
+tests: injected a real fault through a running `uvicorn` instance and
+read the resulting audit log directly — confirmed `sentence-transformers`
+(Sentinel), `or-tools` (Optimization), and `rule_based_heuristic` (Triage,
+via the ESCALATED path) all appear correctly, end to end, with real NIM/
+Nemotron/Groq calls genuinely failing in this environment (no API keys
+configured) rather than being mocked to fail.
+
+`PostHealReportCard.tsx`: modal shell per the guide (backdrop blur,
+max-width 700px, Escape-to-close, 6 metrics in a grid, staggered
+spring-physics animated counters). Backend wiring is explicitly Day 13
+scope per the guide ("placeholder values for now") — a demo button
+("Show Post-Heal Report Card") triggers it with placeholder data for
+now, matching the existing "Show Mock Triage Card" pattern. Used a
+custom canvas confetti burst instead of adding the `canvas-confetti`
+dependency the guide names — it explicitly allows either, and a ~15KB
+new dependency for one 2s effect isn't worth it. Lazy-loaded the new
+component (same Day-11 pattern as SimilarityGraph/HealthIndicators) —
+adding it pushed the main bundle to 505.74kB, back over the 500kB
+threshold Day 11 fixed; lazy-loading brought it to 485.37kB.
+
+Rashi's own guide separately describes her building a competing "Report
+Card Modal" component — same class of duplicate-ownership inconsistency
+as Day 11's Circuit Breaker Panel; Tushar's version is the one that
+exists in the real codebase, consistent with that precedent.
+
+### Nipun — Demo Script + validation
+Wrote `docs/demo_script.md` — the 6-act narrative with exact timestamps
+per the guide's template, using real, already-implemented UI copy
+(toast text, button labels, modal titles quoted verbatim from the actual
+code) rather than paraphrasing. Cross-checked the two integration points
+the guide names:
+- `ReportCardMetrics`' 6 fields (backend `report_card.py` vs frontend
+  `PostHealReportCard.tsx`'s interface) match exactly — no drift.
+- Rashi's chaos-scenario fix (above) and Shreshtha's metrics tests
+  (above) both pass, reviewed as part of this same pass rather than as
+  separate, redundant validation tests.
+
+**Manual step (Nipun's guide's own critical note):** rehearsing the
+script out loud at least once — reading timing back to a teammate is
+how an awkward beat or a narration line that runs long gets caught, and
+that can't be done from here.
+
+Full backend suite: 110 passed, 2 skipped. Dashboard: clean
+`npm run lint` and `npm run build`, main bundle 485.37kB (under the
+500kB threshold).

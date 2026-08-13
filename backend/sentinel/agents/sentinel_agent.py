@@ -19,6 +19,7 @@ from sentence_transformers import SentenceTransformer
 from sentinel.fallback.circuit_breaker import circuit_registry
 from sentinel.fallback.circuit_breaker import CircuitBreaker
 from sentinel.cache.embedding_cache import EmbeddingCache
+from sentinel.metrics.token_counter import token_counter
 
 
 def cosine_similarity(vec_a: list, vec_b: list) -> float:
@@ -61,7 +62,9 @@ class NIMEmbeddingClient:
             timeout=10.0,
         )
         response.raise_for_status()
-        return response.json()["data"][0]["embedding"]
+        data = response.json()
+        token_counter.record("SentinelAgent", "NIM", data.get("usage", {}).get("total_tokens", 0))
+        return data["data"][0]["embedding"]
 
 
 class SentinelAgent:
@@ -71,11 +74,20 @@ class SentinelAgent:
         self.circuit_breaker = CircuitBreaker(failures=3, timeout=60)
         self.embedding_cache = EmbeddingCache(ttl=3600)
         self.windows = {}
+        # Day 12: which source produced the MOST RECENT embed() call —
+        # detect_loop() reads this to attach fallback_origin onto the
+        # LOOP_SUSPECTED audit record, which is what drives the Sentinel
+        # node's fallback ring on the dashboard. embed()'s own return
+        # contract (just the vector) stays unchanged for existing callers.
+        self.last_embed_origin = "NIM"
 
     def embed(self, output_text: str) -> list:
         cache_key = hashlib.sha256(output_text.encode()).hexdigest()
+        cached_entry = self.embedding_cache._store.get(cache_key)
         cached = self.embedding_cache.get(cache_key)
         if cached is not None:
+            if cached_entry is not None:
+                self.last_embed_origin = cached_entry[2]
             return cached
 
         if self.circuit_breaker.is_closed():
@@ -84,6 +96,7 @@ class SentinelAgent:
                 self.embedding_cache.set(cache_key, embedding, fallback_origin="NIM")
                 self.circuit_breaker.record_success()
                 circuit_registry.get("NIM").record_success()  # NEW
+                self.last_embed_origin = "NIM"
                 return embedding
             except Exception as e:
                 print(f"[SentinelAgent] NIM embed failed, falling back: {e}")
@@ -95,10 +108,12 @@ class SentinelAgent:
             self.embedding_cache.set(
                 cache_key, embedding, fallback_origin="sentence-transformers"
             )
+            self.last_embed_origin = "sentence-transformers"
             return embedding
         except Exception as e:
             print(f"[SentinelAgent] sentence-transformers failed: {e}")
 
+        self.last_embed_origin = "hash"
         hash_val = int(hashlib.sha256(output_text.encode()).hexdigest(), 16) % (10**8)
         return [float(hash_val)]
 
@@ -144,6 +159,7 @@ class SentinelAgent:
                 "consecutive_count": 3,
                 "error_hash": hashlib.sha256(error_signature.encode()).hexdigest(),
                 "embedding_vector": embedding,
+                "embedding_origin": self.last_embed_origin,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             return event

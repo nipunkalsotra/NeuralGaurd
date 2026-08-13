@@ -5,7 +5,24 @@ import AuditLogStream from "./components/AuditLogStream";
 import CircuitBreakerPanel from "./components/CircuitBreakerPanel";
 import SandboxTerminal from "./components/SandboxTerminal";
 import TriageReportCard, { type DiagnosisResult } from "./components/TriageReportCard";
+import type { ReportCardMetrics } from "./components/PostHealReportCard";
 import { useDashboardStore, type AgentId } from "./store/dashboardStore";
+
+// Day 12 perf: PostHealReportCard is lazy-loaded below (framer-motion's
+// animate/useMotionValue + lucide icons add real weight for a modal
+// that's hidden until triggered) — the placeholder values that trigger
+// it are kept here as a plain literal rather than importing them from
+// that module, so this file doesn't force-load it eagerly just to get a
+// constant. `type`-only imports (above) are erased at compile time and
+// cost nothing either way.
+const PLACEHOLDER_METRICS: ReportCardMetrics = {
+  time_to_detect: 0.8,
+  tokens_saved: 12,
+  throughput_maintained: 97,
+  fixes_applied: 1,
+  escalations: 0,
+  fallbacks_triggered: 1,
+};
 
 // Day 11 perf pass: both views are hidden until a toggle button is
 // clicked, and SimilarityGraph alone pulls in recharts — code-splitting
@@ -13,6 +30,8 @@ import { useDashboardStore, type AgentId } from "./store/dashboardStore";
 // over the guide's 500kB warning threshold) instead of the main chunk.
 const SimilarityGraph = lazy(() => import("./views/SimilarityGraph"));
 const HealthIndicators = lazy(() => import("./views/HealthIndicators"));
+// Day 12: same treatment — hidden until the demo button triggers it.
+const PostHealReportCard = lazy(() => import("./components/PostHealReportCard"));
 import { useWebSocket } from "./hooks/useWebSocket";
 import type { WorkerState } from "./components/AgentOrb";
 
@@ -34,6 +53,7 @@ interface StateChangePayload {
 // component actually needs are declared here.
 interface AuditEventPayload {
   agent_name: string;
+  trigger_event: string;
   confidence_score: number | null;
   fallback_used: boolean;
   fallback_origin: string | null;
@@ -41,6 +61,32 @@ interface AuditEventPayload {
   fix_type?: string | null;
   affected_field?: string | null;
 }
+
+// Day 12: Fallback Indicators. Which store agent a transition's
+// fallback_origin/agent_name is actually ABOUT — not always the same as
+// the literal agent_name string, since the LOW_CONFIDENCE escalation
+// branch logs agent_name="Orchestrator" even though the fallback in
+// question (rule_based_heuristic) is Triage's. Routing by the
+// fallback_origin VALUE itself (when present) is unambiguous; agent_name
+// is only used to know which ring to CLEAR once a transition resolves
+// without a fallback (fallback_origin null).
+const FALLBACK_ORIGIN_TO_AGENT: Record<string, AgentId> = {
+  groq: "triage",
+  rule_based_heuristic: "triage",
+  "sentence-transformers": "sentinel",
+  hash: "sentinel",
+  "or-tools": "optimization",
+  greedy_round_robin: "optimization",
+  mock: "remediation",
+};
+
+const AGENT_NAME_TO_AGENT_ID: Record<string, AgentId> = {
+  SentinelAgent: "sentinel",
+  TriageAgent: "triage",
+  RemediationAgent: "remediation",
+  OptimizationAgent: "optimization",
+  Orchestrator: "orchestrator",
+};
 
 // Maps a real FSM to_state (per the locked docs/websocket_schema.md
 // `state_change` envelope) to which agent orbs light up and which edge
@@ -88,6 +134,7 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 export default function App() {
   const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(null);
+  const [reportCard, setReportCard] = useState<ReportCardMetrics | null>(null);
   const [showSimilarity, setShowSimilarity] = useState(false);
   const [showHealthIndicators, setShowHealthIndicators] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -95,6 +142,7 @@ export default function App() {
 
   const setAgentState = useDashboardStore((s) => s.setAgentState);
   const setActiveEdge = useDashboardStore((s) => s.setActiveEdge);
+  const setFallbackOrigin = useDashboardStore((s) => s.setFallbackOrigin);
 
   const handleWsMessage = useCallback(
     (msg: WsEnvelope) => {
@@ -114,6 +162,18 @@ export default function App() {
       if (msg.type === "audit_event") {
         try {
           const record = JSON.parse(msg.payload) as AuditEventPayload;
+
+          // Day 12: Fallback Indicators — route this record's
+          // fallback_origin (or its absence) to the specific agent orb
+          // it's actually about. See FALLBACK_ORIGIN_TO_AGENT's comment
+          // for why value-based routing is used instead of agent_name.
+          const fallbackAgent = record.fallback_origin
+            ? FALLBACK_ORIGIN_TO_AGENT[record.fallback_origin]
+            : AGENT_NAME_TO_AGENT_ID[record.agent_name];
+          if (fallbackAgent) {
+            setFallbackOrigin(fallbackAgent, record.fallback_origin ?? null);
+          }
+
           // Only DIAGNOSING->REMEDIATING/ESCALATED carries a real diagnosis
           // (root_cause is null on every other transition) — this is the
           // live-data equivalent of the two manual "Show Mock Triage Card"
@@ -132,7 +192,7 @@ export default function App() {
         }
       }
     },
-    [setAgentState, setActiveEdge, setDiagnosis]
+    [setAgentState, setActiveEdge, setDiagnosis, setFallbackOrigin]
   );
 
   // No mockFallback here on purpose — WorkflowDAG's own "Trigger Full Heal
@@ -182,6 +242,12 @@ export default function App() {
             className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
           >
             Show Fallback Variant
+          </button>
+          <button
+            onClick={() => setReportCard(PLACEHOLDER_METRICS)}
+            className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-colors"
+          >
+            Show Post-Heal Report Card
           </button>
           <button
             onClick={() => setShowSimilarity((v) => !v)}
@@ -242,6 +308,11 @@ export default function App() {
       )}
 
       <TriageReportCard diagnosis={diagnosis} onClose={() => setDiagnosis(null)} />
+      {reportCard && (
+        <Suspense fallback={null}>
+          <PostHealReportCard metrics={reportCard} onClose={() => setReportCard(null)} />
+        </Suspense>
+      )}
     </div>
   );
 }

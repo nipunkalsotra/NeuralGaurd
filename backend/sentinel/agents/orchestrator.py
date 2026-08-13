@@ -140,9 +140,15 @@ class Orchestrator:
             )
             self.worker_states[worker_id] = WorkerState.HEALTHY
 
+        # Day 12: which embedding source detected this loop — drives the
+        # Sentinel node's fallback ring (blue for sentence-transformers,
+        # per Tushar's guide; "NIM" itself is never a fallback).
+        embedding_origin = event.get("embedding_origin")
         await self.transition(
             worker_id, WorkerState.LOOP_SUSPECTED,
             trigger_event="LOOP_SUSPECTED", agent_name="SentinelAgent",
+            fallback_used=embedding_origin not in (None, "NIM"),
+            fallback_origin=embedding_origin if embedding_origin != "NIM" else None,
         )
         await self.transition(
             worker_id, WorkerState.DIAGNOSING,
@@ -162,10 +168,19 @@ class Orchestrator:
         confidence = event.get("confidence", 0.0)
 
         if confidence < CONFIDENCE_ESCALATION_THRESHOLD:
+            # Day 12: this branch never forwarded fallback_used/fallback_origin,
+            # even though the rule-based heuristic (confidence always 0.65,
+            # always below CONFIDENCE_ESCALATION_THRESHOLD) can ONLY ever
+            # reach this branch, never REMEDIATING — meaning
+            # fallback_origin="rule_based_heuristic" could never actually
+            # appear on any audit record before this fix, leaving the
+            # Triage node's fallback indicator blind to that one path.
             await self.transition(
                 worker_id, WorkerState.ESCALATED,
                 trigger_event="LOW_CONFIDENCE", agent_name="Orchestrator",
                 confidence_score=confidence,
+                fallback_used=event.get("fallback_used", False),
+                fallback_origin=event.get("fallback_origin"),
                 root_cause=event.get("root_cause"),
                 fix_type=event.get("fix_type"),
                 affected_field=event.get("affected_field"),
@@ -198,11 +213,20 @@ class Orchestrator:
             trigger_event="REMEDIATION_ATTEMPTED", agent_name="RemediationAgent",
         )
 
+        # Day 12: "mock" specifically drives the Remediation node's gray
+        # ring + MOCK badge (guide's 4th fallback indicator); other
+        # non-primary modes (timeout/error/unavailable) are real failures,
+        # not the mock-wrapper-took-over case, so they're flagged but not
+        # labeled as this specific fallback.
+        mode = remediation_result.get("mode")
+        remediation_fallback_origin = mode if mode == "mock" else None
+
         if remediation_result.get("verified") is True:
             await self.transition(
                 worker_id, WorkerState.RESUMED,
                 trigger_event="REMEDIATION_SUCCESS", agent_name="RemediationAgent",
                 fallback_used=remediation_result.get("flagged", False),
+                fallback_origin=remediation_fallback_origin,
             )
             await self.event_bus.publish(
                 "REMEDIATION_SUCCESS",
@@ -212,6 +236,8 @@ class Orchestrator:
             await self.transition(
                 worker_id, WorkerState.ESCALATED,
                 trigger_event="REMEDIATION_FAILED", agent_name="RemediationAgent",
+                fallback_used=remediation_result.get("flagged", False),
+                fallback_origin=remediation_fallback_origin,
             )
             await self.event_bus.publish(
                 "ESCALATED",
@@ -222,9 +248,20 @@ class Orchestrator:
         """OptimizationAgent dispatches in parallel with Triage on every
         LOOP_SUSPECTED (per master doc Section 6's concurrency guarantee).
         Day 10 fix: this had no consumer at all — ReroutePlan was computed
-        and immediately discarded. Stores the latest plan per worker and
-        writes it to the audit trail so a reroute is provable after the
-        fact, same as every other real transition."""
+        and immediately discarded. Stores the latest plan per worker.
+
+        Day 12 fix: this docstring claimed the plan was written to the
+        audit trail "so a reroute is provable after the fact, same as
+        every other real transition" — it never actually was; the method
+        only logged and stored in-memory. Optimization has no WorkerState
+        of its own, so this can't go through self.transition() (which
+        enforces FSM legality against self.worker_states) — it writes
+        directly via audit_logger + broadcasts the same way transition()
+        does, using the worker's current state for both from/to (a
+        side-channel event, not an FSM move). This is also what the
+        Optimization node's fallback ring on the dashboard reads
+        (solver_used is always "or-tools" or "greedy_round_robin" since
+        cuOpt is skipped project-wide — see docs/api_contracts.md)."""
         worker_id = event["worker_id"]
         plan = {
             "assignments": event.get("assignments", []),
@@ -239,3 +276,18 @@ class Orchestrator:
             worker_id, plan["solver_used"], plan["projected_throughput_pct"] or 0.0,
             len(plan["assignments"]), plan["excluded_workers"],
         )
+
+        current_state = self.get_state(worker_id).value
+        record = self.audit_logger.log_transition(
+            worker_id=worker_id,
+            from_state=current_state,
+            to_state=current_state,
+            trigger_event="OPTIMIZATION_COMPLETE",
+            agent_name="OptimizationAgent",
+            fallback_used=True,  # cuOpt is always skipped — OR-Tools/greedy is always a fallback
+            fallback_origin=plan["solver_used"],
+        )
+        try:
+            await broadcast_audit_event(worker_id=worker_id, audit_record=record)
+        except Exception as e:
+            logger.warning("WebSocket broadcast failed (non-fatal): %s", e)

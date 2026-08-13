@@ -18,6 +18,7 @@ from sentinel.cache.diagnosis_cache import DiagnosisCache
 from sentinel.fallback.circuit_breaker import CircuitBreaker
 from sentinel.fallback.circuit_breaker import circuit_registry
 from sentinel.fallback.json_repair import repair_json
+from sentinel.metrics.token_counter import token_counter
 
 
 class NemotronClient:
@@ -43,7 +44,9 @@ class NemotronClient:
             timeout=25.0,
         )
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+        token_counter.record("TriageAgent", "Nemotron", data.get("usage", {}).get("total_tokens", 0))
+        return data["choices"][0]["message"]["content"]
 
 
 class GroqClient:
@@ -69,7 +72,9 @@ class GroqClient:
             timeout=15.0,
         )
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+        token_counter.record("TriageAgent", "Groq", data.get("usage", {}).get("total_tokens", 0))
+        return data["choices"][0]["message"]["content"]
 
 
 class RuleBasedHeuristic:
@@ -82,7 +87,10 @@ class RuleBasedHeuristic:
     # (regex to match in log lines, root_cause template, fix_type, affected_field template)
     PATTERNS = [
         (
-            r"field ['\"]?(\w+)['\"]? not found",
+            # "field" prefix optional — real error messages often just say
+            # "Tax_ID not found" without the literal word "field" (Day 12:
+            # this is exactly ErrorSignatureFault's default text).
+            r"(?:field ['\"]?)?(\w+)['\"]? not found",
             "Field '{field}' missing from expected schema",
             "SCHEMA_MISMATCH",
             "{field}",
@@ -191,12 +199,16 @@ Return ONLY valid JSON in this exact format, no other text:
 
         cached = self.diagnosis_cache.get(cache_key)
         if cached is not None:
+            if cached.get("fallback_origin") in ("nemotron", "groq"):
+                token_counter.record_cache_hit_savings("TriageAgent", cached["fallback_origin"].capitalize())
             return cached
 
         prompt = self.build_prompt(loop_event, log_lines)
 
-        # Primary: Nemotron
-        if self.circuit_breaker.is_closed():
+        # Primary: Nemotron — also skipped once its hourly token budget is
+        # exhausted (Day 12: soft-limit enforcement), same idea as the
+        # circuit breaker but for cost instead of failures.
+        if self.circuit_breaker.is_closed() and not token_counter.is_over_budget("TriageAgent", "Nemotron"):
             try:
                 raw = self.nemotron_client.chat(prompt)
                 result = repair_json(raw)

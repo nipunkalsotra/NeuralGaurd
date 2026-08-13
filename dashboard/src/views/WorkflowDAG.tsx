@@ -55,7 +55,7 @@ export default function WorkflowDAG() {
         data: {
           label: LABELS[id],
           state: agents[id].state,
-          fallbackActive: agents[id].fallbackActive,
+          fallbackOrigin: agents[id].fallbackOrigin,
           onSelect: () => setSelected(id),
         },
         draggable: false,
@@ -187,7 +187,7 @@ export default function WorkflowDAG() {
               </ul>
 
               <p className="text-xs text-slate-400 mb-1">Fallback Status</p>
-              <p className="text-sm text-slate-200">{selectedAgent.fallbackActive ? "Active" : "None"}</p>
+              <p className="text-sm text-slate-200">{selectedAgent.fallbackOrigin ?? "None"}</p>
             </motion.div>
           )}
         </AnimatePresence>
