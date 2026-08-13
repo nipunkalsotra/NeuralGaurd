@@ -425,3 +425,89 @@ every one of those transitions is already proven by
 `test_day11_cache_circuit_integration.py`'s 4 circuit-status tests; this
 step is only confirming the browser renders what the endpoint already
 correctly reports.
+
+## Day 11 Status — Circuit Breaker Panel Complete + Dashboard Polish (Tushar)
+
+**Scope:** per Tushar's guide — verify the panel against real failures
+(not directly-poked breaker objects), performance tuning (React.memo,
+bundle size), and a visual polish pass on Days 9-10's remaining UI.
+
+### The guide's end-of-day blocker is a two-person physical test
+"Ask Nipun to block NIM URL in his hosts file... ask Nipun to trigger a
+Nemotron rate-limit... watch the panel." That requires two machines and
+real network conditions, and can't be run from here. What the physical
+test is actually checking, though, is that a *real* agent-level failure
+(not a directly-poked `CircuitBreaker` object, which is all
+`test_circuit_breaker.py` and even `test_day11_cache_circuit_integration.py`
+exercised) reaches the dashboard-facing `circuit_registry`. Checked that
+specific gap directly rather than assuming it: added
+`test_day11_tushar_panel_verification.py`, which fails
+`SentinelAgent.embed()` for real (mocked `nim_client.embed` raising, 3x,
+distinct inputs so the cache can't hide a repeat failure) and confirms
+`GET /api/circuit-status` shows NIM `OPEN` with the real exception
+message as `last_failure` — and does the same for `TriageAgent.diagnose()`
+with a mocked Nemotron 429, confirming both the Nemotron breaker opens
+*and* the returned diagnosis carries `fallback_used: true,
+fallback_origin: "groq"` (the data the Groq-fallback banner depends on).
+Both pass. This closes the agent-to-registry half of the chain from
+code; the registry-to-endpoint half was already closed on Shreshtha's
+side. The only thing left is the browser-rendering step noted above —
+genuinely visual, not a code gap.
+
+One naming note: Tushar's guide describes the Groq fallback as a
+*pulsing yellow halo on the Triage node in the Workflow DAG* — that
+specific visual doesn't exist yet. It's not a Day-11 gap: the same
+guide's own Day-12 section ("Fallback Indicators") lists building
+exactly this halo as that day's work, so Day 11 verifying it against a
+UI element Day 12 hasn't built yet is an ordering inconsistency in the
+guide, not a missed task today. `TriageReportCard`'s existing "Fallback
+Active" badge already surfaces the same underlying data in the interim.
+
+### Real gaps found and fixed
+1. **Bundle size was 852.93 kB minified, over the guide's 500 kB
+   threshold.** `recharts` (used only by `SimilarityGraph`, which is
+   hidden behind a toggle button, off by default) was bundled into the
+   main chunk regardless. Code-split it via `React.lazy` + `Suspense` in
+   `App.tsx` (also applied to `HealthIndicators`, same pattern) — main
+   chunk dropped to 491.52 kB, with the 361 kB `recharts` chunk now only
+   fetched if a user actually opens the Similarity Graph.
+2. **`CircuitBreakerPanel`'s `ServiceCard` had no `React.memo`**, unlike
+   `AgentOrb` and `AuditLogStream`'s `LogRow`, which the guide explicitly
+   names alongside it. Since the panel polls every 2s and rebuilds the
+   `services` array with fresh object references every time regardless
+   of whether anything changed, a plain `memo()` would never have bailed
+   out anyway (default shallow comparison fails on the new reference
+   every poll) — added a custom comparator on the actual fields instead,
+   so an unchanged card (the common case: usually 4 of 5 services are
+   unchanged on any given poll) actually skips re-rendering.
+3. **`AuditLogStream` failed the project's own lint config**
+   (`react-hooks/set-state-in-effect`) on its auto-scroll effect, which
+   called `setHasNew` synchronously alongside a DOM `scrollTo`. Traced
+   the actual logic and found `hasNew` was never really derived from
+   `entries` at all — the effect's condition only ever looked at
+   `autoScroll`, making `hasNew` exactly equal to `!autoScroll` in every
+   case. Replaced the state+effect with a plain derived `const hasNew =
+   !autoScroll`, removing the lint violation and the redundant render
+   pass at the same time, not just silencing the rule.
+4. **`CircuitBreakerPanel`'s `DetailModal` had backdrop-blur but no
+   Escape-to-close**, unlike `TriageReportCard`'s modal — the guide's
+   polish checklist explicitly asks for both on every modal. Added the
+   same `keydown` listener pattern `TriageReportCard` already uses.
+5. **The "New events ↓" jump-to-bottom button in `AuditLogStream` had no
+   hover state at all** — the guide's checklist item "ensure all buttons
+   have hover states" was checked against every button in the dashboard;
+   this was the one real miss (everything else either already had a
+   hover class or inherited one from a hover-styled parent row). Added
+   `hover:bg-amber-300 transition-colors`.
+
+`npm run lint` and `npm run build` (`tsc -b && vite build`): clean, zero
+errors. Full backend suite: 86 passed, 2 skipped.
+
+### Verified, no fix needed
+- Panel already polls the real endpoint every 2s, already overrides
+  cuOpt to a static "Unused" card, already shows hover tooltips with
+  last-failure reason/time on every card (Rashi's/Shreshtha's Day 6/11
+  work) — all confirmed still correct.
+- Screen-size and Chrome/Safari cross-browser testing from the guide's
+  polish checklist are inherently manual/visual — noted, not something
+  to fake a pass on from here.

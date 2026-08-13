@@ -139,7 +139,13 @@ export default function AuditLogStream({ wsUrl }: AuditLogStreamProps) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [filter, setFilter] = useState<string>("All");
   const [autoScroll, setAutoScroll] = useState(true);
-  const [hasNew, setHasNew] = useState(false);
+  // Not new-entry content, just "auto-scroll is off, so newer entries may
+  // be off-screen" — the old effect keyed on [entries, autoScroll] but
+  // never actually inspected entries in the condition, so it was always
+  // exactly !autoScroll. A plain derived value needs neither state nor an
+  // effect (also resolves Day 11's lint pass: react-hooks/set-state-in-effect
+  // flagged the old effect for calling setState synchronously).
+  const hasNew = !autoScroll;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const mockRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -208,15 +214,12 @@ export default function AuditLogStream({ wsUrl }: AuditLogStreamProps) {
     };
   }, []);
 
-  // auto-scroll
+  // auto-scroll — DOM sync only, external-system side effect, nothing
+  // else belongs in here (see hasNew above for why the old setState call
+  // that used to live in this same effect isn't needed at all).
   useEffect(() => {
-    if (!scrollRef.current) return;
-    if (autoScroll) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-      setHasNew(false);
-    } else {
-      setHasNew(true);
-    }
+    if (!scrollRef.current || !autoScroll) return;
+    scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [entries, autoScroll]);
 
   const handleScroll = () => {
@@ -227,9 +230,8 @@ export default function AuditLogStream({ wsUrl }: AuditLogStreamProps) {
   };
 
   const jumpToBottom = () => {
-    setAutoScroll(true);
+    setAutoScroll(true); // hasNew derives from autoScroll, so this alone clears it
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-    setHasNew(false);
   };
 
   const filtered = useMemo(
@@ -276,7 +278,7 @@ export default function AuditLogStream({ wsUrl }: AuditLogStreamProps) {
           {hasNew && (
             <button
               onClick={jumpToBottom}
-              className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs px-3 py-1 rounded-full bg-amber-400 text-slate-900 font-semibold shadow-lg"
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs px-3 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-900 font-semibold shadow-lg transition-colors"
             >
               New events ↓
             </button>

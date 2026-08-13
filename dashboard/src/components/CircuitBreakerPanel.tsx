@@ -1,5 +1,5 @@
 // src/components/CircuitBreakerPanel.tsx
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Cpu, Brain, Route, Zap, Terminal, X } from "lucide-react";
 import PanelShell from "./PanelShell";
@@ -70,7 +70,13 @@ function timeAgo(iso: string | null): string {
   return `${Math.floor(mins / 60)}h ago`;
 }
 
-function ServiceCard({
+// Day 11 perf pass: the panel polls every 2s and rebuilds `services` with
+// fresh object references every time even when nothing changed, so plain
+// React.memo's default reference comparison would never bail out. A
+// custom comparator on the actual fields lets an unchanged card (the
+// common case — usually 4 of 5 services are unchanged on any given poll)
+// skip re-rendering instead of all 5 re-rendering every 2 seconds.
+const ServiceCard = memo(function ServiceCard({
   data,
   index,
   onSelect,
@@ -113,11 +119,26 @@ function ServiceCard({
       )}
     </motion.div>
   );
-}
+},
+(prev, next) =>
+  prev.data.service === next.data.service &&
+  prev.data.status === next.data.status &&
+  prev.data.failure_count === next.data.failure_count &&
+  prev.data.last_failure === next.data.last_failure &&
+  prev.index === next.index
+);
 
 function DetailModal({ data, onClose }: { data: ServiceStatus; onClose: () => void }) {
   const isCuOpt = data.service === "cuOpt";
   const cfg = STATUS_CONFIG[data.status] ?? STATUS_CONFIG.closed;
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   return (
     <motion.div

@@ -1,13 +1,18 @@
 // src/App.tsx
-import { useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useState } from "react";
 import WorkflowDAG from "./views/WorkflowDAG";
 import AuditLogStream from "./components/AuditLogStream";
 import CircuitBreakerPanel from "./components/CircuitBreakerPanel";
 import SandboxTerminal from "./components/SandboxTerminal";
 import TriageReportCard, { type DiagnosisResult } from "./components/TriageReportCard";
-import SimilarityGraph from "./views/SimilarityGraph";
-import HealthIndicators from "./views/HealthIndicators";
 import { useDashboardStore, type AgentId } from "./store/dashboardStore";
+
+// Day 11 perf pass: both views are hidden until a toggle button is
+// clicked, and SimilarityGraph alone pulls in recharts — code-splitting
+// them keeps that weight out of the initial bundle (852.93kB minified,
+// over the guide's 500kB warning threshold) instead of the main chunk.
+const SimilarityGraph = lazy(() => import("./views/SimilarityGraph"));
+const HealthIndicators = lazy(() => import("./views/HealthIndicators"));
 import { useWebSocket } from "./hooks/useWebSocket";
 import type { WorkerState } from "./components/AgentOrb";
 
@@ -216,13 +221,17 @@ export default function App() {
 
       {showSimilarity && (
         <div className="absolute bottom-[20%] left-0 w-[60%] h-[300px] z-30 border-t border-r border-slate-700">
-          <SimilarityGraph />
+          <Suspense fallback={null}>
+            <SimilarityGraph />
+          </Suspense>
         </div>
       )}
 
       {showHealthIndicators && (
         <div className="absolute top-14 left-0 w-full h-[140px] z-30 border-b border-slate-700">
-          <HealthIndicators />
+          <Suspense fallback={null}>
+            <HealthIndicators />
+          </Suspense>
         </div>
       )}
 
