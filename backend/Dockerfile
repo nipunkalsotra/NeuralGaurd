@@ -21,4 +21,14 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Day 13 perf tuning: --reload is a dev-only flag (runs a continuous
+# file-system watcher) that has no business in the image used for the
+# live demo — removed. Deliberately staying at 1 worker (no --workers
+# flag): SentinelAgent, TriageAgent's circuit breakers, EmbeddingCache/
+# DiagnosisCache, circuit_registry, and TokenCounter are all in-memory
+# singletons at module scope — multiple worker PROCESSES would each get
+# their own independent copy of every one of them, silently breaking the
+# shared-state model (a dashboard client could see a different circuit
+# breaker state than the one that actually served its request). Multiple
+# workers here would be a correctness bug, not a performance win.
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

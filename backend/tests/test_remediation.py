@@ -109,6 +109,36 @@ async def test_remediate_circuit_breaker_opens_after_failures(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_wrapper_timeout_is_configurable(monkeypatch):
+    """Day 13: made the hardcoded 30s wrapper timeout a constructor
+    param so the real stress test could exercise genuine (not mocked)
+    timeouts against the real wrapper under load, without needing a
+    30s wait per request to observe one."""
+    captured_timeouts = []
+
+    class FakeAsyncClient:
+        """Day 13: RemediationAgent now holds one persistent client
+        (created once in __init__) rather than opening/closing a new one
+        per remediate() call — no context-manager protocol needed here
+        since it's called directly, not via `async with`."""
+
+        def __init__(self, timeout):
+            captured_timeouts.append(timeout)
+
+        async def post(self, url, json=None, **kwargs):
+            raise httpx.TimeoutException("simulated")
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
+    agent = RemediationAgent(wrapper_timeout=2.5)
+    result = await agent.remediate(DIAGNOSIS)
+
+    assert captured_timeouts == [2.5]
+    assert result["mode"] == "timeout"
+    assert "2.5" in result["output"]
+
+
+@pytest.mark.asyncio
 async def test_agent_code_identical_for_mock_and_real_mode(monkeypatch):
     """
     Confirms agent doesn't branch on wrapper mode — same call, same code

@@ -644,3 +644,102 @@ that can't be done from here.
 Full backend suite: 110 passed, 2 skipped. Dashboard: clean
 `npm run lint` and `npm run build`, main bundle 485.37kB (under the
 500kB threshold).
+
+## Day 13 Status — Report Card Backend Wiring, Wrapper Stress Test, Backup Plans, Timing Lock
+
+**Scope:** Rashi's and Shreshtha's individual guides both assign the
+exact same wrapper stress test (same command, same targets) — the same
+duplicate-ownership pattern seen on Days 11-12 — run once for real
+rather than twice. Rashi's guide also separately claims she completes
+"Report Card Modal... backend wiring," which is the same component
+Tushar already owns (`PostHealReportCard.tsx`, built Day 12); that
+wiring is covered under Tushar's section below, not duplicated.
+
+### Tushar — Report Card Backend Wiring + Animation Polish
+`App.tsx`'s `state_change` handler now fetches `GET /api/metrics` and
+populates `PostHealReportCard` for real when `trigger_event ===
+"REMEDIATION_SUCCESS"` arrives — the exact event the guide names,
+reusing the same "react to the event that caused the change" pattern
+Day 10's Triage Report Card auto-open already established. Verified
+live against a real (non-test) backend: connected a raw WebSocket
+client, injected a real fault, and confirmed `state_change` events
+deliver correctly in real time end-to-end.
+
+Two real animation gaps found while cross-checking the demo script's
+Act 2 against actual code (not assumed correct): the toast had **no
+animation at all** (plain conditional render, guide names an explicit
+0.3s slide-in), and the BREAK IT button's press animation used Tailwind's
+default 150ms transition instead of the spec'd 0.1s. Both fixed. Full
+timing cross-check (every act, verified against real code, not copied
+from the guide unverified) documented in the new `docs/demo_timing.md` —
+including one gap NOT fixed today: the demo script's Acts 1/3/5 all
+narrate a persistent live throughput counter that doesn't exist as a
+standalone UI element anywhere except inside the Post-Heal Report Card
+(only visible at the very end). Flagged rather than built unasked —
+it's real new UI work, not "polish" or "timing lock."
+
+### Shreshtha + Rashi — Wrapper Stress Test + Performance Tuning
+Ran for real, not simulated: 40 concurrent `/v1/remediate` requests
+against a live `wrapper_service.py` (mock mode). **Normal load**: 40/40
+succeeded, P50/P95/P99 all ~2.05s (well under the 3s/8s/15s targets),
+memory/swap flat before vs. after. **The guide's other requirement —
+"verify auto-fallback triggers for timed-out requests" — needed an
+actual timeout to happen**, which the mock wrapper can't produce via
+its request parameters (fixed 2s delay, always succeeds). Made
+`RemediationAgent`'s previously-hardcoded 30s timeout a constructor
+parameter specifically to test this for real (not mocked): 40
+concurrent calls with a 1s client timeout against the real (still 2s)
+wrapper — all 40 genuinely timed out and all 40 correctly returned
+`mode: "timeout", flagged: True`, zero crashes, circuit breaker
+correctly opened afterward. Full results, including the environment
+caveat (this machine has 7.5GB RAM, not the guide's assumed 16GB, and
+swap was already near its cap before either test — noted since it
+affects how these numbers compare to a run on different hardware) in
+the new `docs/stress_test_results.md`.
+
+Performance tuning applied, each verified real and re-tested rather
+than assumed safe:
+1. Removed `--reload` from `backend/Dockerfile`'s CMD — a dev-only
+   flag with real overhead that has no business in the demo image.
+2. **Deliberately did not add `--workers N>1`** — `SentinelAgent`,
+   `TriageAgent`'s circuit breakers, both caches, `circuit_registry`,
+   and `TokenCounter` are all in-memory singletons at module scope;
+   multiple worker processes would each get an independent copy of
+   every one of them, silently breaking the shared-state model a
+   dashboard client depends on. Explicitly staying at 1 worker is the
+   correct call given this architecture, not an oversight.
+3. `RemediationAgent` was opening and closing a brand-new
+   `httpx.AsyncClient` (and a new TCP connection) on every single
+   `remediate()` call, defeating connection pooling/keep-alive
+   entirely. Now holds one persistent client for its lifetime. Re-ran
+   both stress tests after this change to confirm no regression.
+
+Documented, not fixed: `TriageAgent.diagnose()` and the Nemotron/Groq/
+NIM clients underneath it make synchronous, blocking HTTP calls from
+inside code invoked from an async context — a slow real LLM response
+would block the whole event loop. Real, but fixing it means converting
+three client classes (and their existing test suites, which mock them
+synchronously) to async for a condition that doesn't show up in the
+demo's actual usage pattern (one fault injection, not 40 concurrent
+Triage calls) — noted as a Phase 2 concern rather than over-fixed this
+close to demo day.
+
+### Nipun — Backup Plan Documentation
+Wrote `docs/backup_plans.md` — Plans A/B/C per the guide's template,
+with Plan B's "auto-fallback in <5s" claim backed by today's actual
+stress test numbers rather than asserted on faith. Plan C (mock-mode
+video) correctly deferred to Shreshtha's Day 14, per the guide.
+
+### Manual steps (all four guides converge on the same one)
+Every guide's real Day-13 blocker is the same: **rehearse with the team,
+out loud, timing every beat against Nipun's narration** (Nipun's guide:
+"rehearsed 3+ times"; Tushar's guide: "final run-through with Nipun
+narrating... if timing is off, adjust and re-test until perfect"). That
+can't be done from here — it requires an actual person speaking and a
+teammate operating the dashboard in response, in real time. Everything
+each guide assigned that could be verified from code, a real running
+server, or a document has been; this rehearsal is the one genuine
+gate before Day 14.
+
+Full backend suite: 111 passed, 2 skipped. Dashboard: clean
+`npm run lint` and `npm run build`, main bundle 485.58kB.

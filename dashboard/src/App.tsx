@@ -1,5 +1,6 @@
 // src/App.tsx
 import { lazy, Suspense, useCallback, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import WorkflowDAG from "./views/WorkflowDAG";
 import AuditLogStream from "./components/AuditLogStream";
 import CircuitBreakerPanel from "./components/CircuitBreakerPanel";
@@ -153,6 +154,18 @@ export default function App() {
           if (!agents) return;
           agents.forEach((agent) => setAgentState(agent, to_state, trigger_event));
           setActiveEdge(STATE_TO_EDGE[to_state]);
+
+          // Day 13: Report Card Backend Wiring. REMEDIATION_SUCCESS is the
+          // only trigger_event that lands on RESUMED (orchestrator.py's
+          // on_diagnosis_complete) — fetch the real, just-updated metrics
+          // rather than waiting for a poll, same "react to the event that
+          // caused the change" pattern as Day 10's Triage Report Card.
+          if (trigger_event === "REMEDIATION_SUCCESS") {
+            fetch(`${BACKEND_URL}/api/metrics`)
+              .then((res) => res.json())
+              .then((data: ReportCardMetrics) => setReportCard(data))
+              .catch((e) => console.error("Failed to fetch report card metrics:", e));
+          }
         } catch {
           console.warn("Malformed state_change payload, ignoring:", msg.payload);
         }
@@ -192,7 +205,7 @@ export default function App() {
         }
       }
     },
-    [setAgentState, setActiveEdge, setDiagnosis, setFallbackOrigin]
+    [setAgentState, setActiveEdge, setDiagnosis, setFallbackOrigin, setReportCard]
   );
 
   // No mockFallback here on purpose — WorkflowDAG's own "Trigger Full Heal
@@ -264,7 +277,11 @@ export default function App() {
           <button
             onClick={handleBreakIt}
             disabled={breakItDisabled}
-            className={`w-[160px] h-[56px] rounded-lg font-bold text-white text-sm tracking-wide transition-all active:scale-95 ${
+            // Day 13: demo script's Act 2 names "button press animation
+            // (scale 0.95, 0.1s)" specifically — duration-100 replaces
+            // the generic transition-all's default 150ms with the exact
+            // spec'd 100ms.
+            className={`w-[160px] h-[56px] rounded-lg font-bold text-white text-sm tracking-wide transition-all duration-100 active:scale-95 ${
               breakItDisabled ? "bg-rose-900/50 cursor-not-allowed opacity-60" : "bg-rose-600 hover:bg-rose-700"
             }`}
           >
@@ -301,11 +318,19 @@ export default function App() {
         </div>
       )}
 
-      {toast && (
-        <div className="fixed top-16 right-4 z-[70] bg-amber-500 text-amber-950 px-4 py-2 rounded-md text-sm font-semibold shadow-lg">
-          {toast}
-        </div>
-      )}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -20, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed top-16 right-4 z-[70] bg-amber-500 text-amber-950 px-4 py-2 rounded-md text-sm font-semibold shadow-lg"
+          >
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <TriageReportCard diagnosis={diagnosis} onClose={() => setDiagnosis(null)} />
       {reportCard && (

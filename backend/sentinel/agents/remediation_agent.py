@@ -37,9 +37,18 @@ PATCH_TEMPLATES = {
 
 
 class RemediationAgent:
-    def __init__(self, wrapper_url: str = None):
+    def __init__(self, wrapper_url: str = None, wrapper_timeout: float = 30.0):
         self.wrapper_url = wrapper_url or WRAPPER_URL
+        self.wrapper_timeout = wrapper_timeout
         self.circuit_breaker = CircuitBreaker(failures=3, timeout=60)
+        # Day 13 perf tuning: a fresh httpx.AsyncClient (and its own new
+        # TCP connection) was being opened AND torn down on every single
+        # remediate() call — httpx.AsyncClient's whole point is to be
+        # created once and reused, so it can pool/keep-alive connections
+        # across requests. One long-lived client for this agent's
+        # lifetime, matching httpx's own documented recommendation for
+        # long-running processes.
+        self._client = httpx.AsyncClient(timeout=self.wrapper_timeout)
 
     def generate_patch(self, fix_type: str, affected_field: str) -> str:
         """Generates a small targeted patch string based on fix_type."""
@@ -72,24 +81,23 @@ class RemediationAgent:
             }
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.wrapper_url}/v1/remediate",
-                    json={"patch": patch, "test_fixture": test_fixture, "worker_id": worker_id},
-                )
-                response.raise_for_status()
-                result = response.json()
-                self.circuit_breaker.record_success()
-                circuit_registry.get("NemoClaw").record_success()  # NEW
-                return result
+            response = await self._client.post(
+                f"{self.wrapper_url}/v1/remediate",
+                json={"patch": patch, "test_fixture": test_fixture, "worker_id": worker_id},
+            )
+            response.raise_for_status()
+            result = response.json()
+            self.circuit_breaker.record_success()
+            circuit_registry.get("NemoClaw").record_success()  # NEW
+            return result
 
         except httpx.TimeoutException:
-            logger.error("Wrapper call timed out after 30s")
+            logger.error("Wrapper call timed out after %ss", self.wrapper_timeout)
             self.circuit_breaker.record_failure()
             circuit_registry.get("NemoClaw").record_failure(reason="timeout")  # NEW
             return {
                 "verified": False,
-                "output": "Wrapper call timed out after 30s",
+                "output": f"Wrapper call timed out after {self.wrapper_timeout}s",
                 "sandbox_log": "",
                 "mode": "timeout",
                 "flagged": True,
