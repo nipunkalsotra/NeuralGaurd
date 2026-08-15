@@ -27,7 +27,6 @@ const STATUS_CONFIG: Record<CBStatus, { dot: string; label: string; pulse: boole
   open: { dot: "bg-rose-500", label: "Down", pulse: false },
 };
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 const POLL_INTERVAL_MS = 2000;
 
 const CUOPT_SKIPPED_REASON = "Skipped — API access unresolved, OR-Tools is primary solver";
@@ -185,7 +184,11 @@ function DetailModal({ data, onClose }: { data: ServiceStatus; onClose: () => vo
   );
 }
 
-export default function CircuitBreakerPanel() {
+interface CircuitBreakerPanelProps {
+  backendUrl: string;
+}
+
+export default function CircuitBreakerPanel({ backendUrl }: CircuitBreakerPanelProps) {
   const [services, setServices] = useState<ServiceStatus[]>(MOCK_SERVICES);
   const [selected, setSelected] = useState<ServiceStatus | null>(null);
   const [isLive, setIsLive] = useState(false);
@@ -194,7 +197,7 @@ export default function CircuitBreakerPanel() {
   useEffect(() => {
     const poll = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/circuit-status`);
+        const res = await fetch(`${backendUrl}/api/circuit-status`);
         if (!res.ok) throw new Error("bad response");
         const data = await res.json();
         const normalized: ServiceStatus[] = data.services.map((s: ServiceStatus) => ({
@@ -211,7 +214,7 @@ export default function CircuitBreakerPanel() {
     poll();
     pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
     return () => clearInterval(pollRef.current);
-  }, []);
+  }, [backendUrl]);
 
   return (
     <PanelShell title={`Circuit Breakers${isLive ? "" : " (offline)"}`} className="border-r border-slate-800">

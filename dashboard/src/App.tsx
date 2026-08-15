@@ -1,10 +1,11 @@
 // src/App.tsx
-import { lazy, Suspense, useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import WorkflowDAG from "./views/WorkflowDAG";
 import AuditLogStream from "./components/AuditLogStream";
 import CircuitBreakerPanel from "./components/CircuitBreakerPanel";
 import SandboxTerminal from "./components/SandboxTerminal";
+import ConnectionSettings from "./components/ConnectionSettings";
 import TriageReportCard, { type DiagnosisResult } from "./components/TriageReportCard";
 import type { ReportCardMetrics } from "./components/PostHealReportCard";
 import { useDashboardStore, type AgentId } from "./store/dashboardStore";
@@ -130,8 +131,31 @@ const MOCK_DIAGNOSIS_FALLBACK: DiagnosisResult = {
   fallback_origin: "groq",
 };
 
-const BACKEND_WS_URL = import.meta.env.VITE_WS_URL as string | undefined;
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const ENV_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+// Runtime connection override — lets anyone point the dashboard at a live
+// backend (e.g. the demo host's LAN IP) from the header UI, without
+// editing dashboard/.env.local and restarting `npm run dev` (Vite only
+// reads that file at startup, which was the main friction point during
+// cross-machine rehearsals). Falls back to the build-time env vars above.
+const HOST_STORAGE_KEY = "sentinel:backend-host";
+
+function hostFromUrl(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "localhost:8000";
+  }
+}
+
+const DEFAULT_HOST = hostFromUrl(ENV_BACKEND_URL);
+
+function urlsForHost(host: string) {
+  return {
+    backendUrl: `http://${host}`,
+    wsUrl: `ws://${host}/ws/stream`,
+  };
+}
 
 // Day 15 cleanup: the 3 "Show Mock ..." buttons inject fake data on
 // demand — genuinely useful as Day 13's Backup Plan B/C mechanism when
@@ -148,6 +172,20 @@ export default function App() {
   const [showHealthIndicators, setShowHealthIndicators] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [breakItDisabled, setBreakItDisabled] = useState(false);
+  const [backendHost, setBackendHost] = useState<string>(
+    () => localStorage.getItem(HOST_STORAGE_KEY) || DEFAULT_HOST
+  );
+  const { backendUrl, wsUrl } = useMemo(() => urlsForHost(backendHost), [backendHost]);
+
+  const handleHostSave = useCallback((host: string) => {
+    localStorage.setItem(HOST_STORAGE_KEY, host);
+    setBackendHost(host);
+  }, []);
+
+  const handleHostReset = useCallback(() => {
+    localStorage.removeItem(HOST_STORAGE_KEY);
+    setBackendHost(DEFAULT_HOST);
+  }, []);
 
   const setAgentState = useDashboardStore((s) => s.setAgentState);
   const setActiveEdge = useDashboardStore((s) => s.setActiveEdge);
@@ -169,7 +207,7 @@ export default function App() {
           // rather than waiting for a poll, same "react to the event that
           // caused the change" pattern as Day 10's Triage Report Card.
           if (trigger_event === "REMEDIATION_SUCCESS") {
-            fetch(`${BACKEND_URL}/api/metrics`)
+            fetch(`${backendUrl}/api/metrics`)
               .then((res) => res.json())
               .then((data: ReportCardMetrics) => setReportCard(data))
               .catch((e) => console.error("Failed to fetch report card metrics:", e));
@@ -213,7 +251,7 @@ export default function App() {
         }
       }
     },
-    [setAgentState, setActiveEdge, setDiagnosis, setFallbackOrigin, setReportCard]
+    [backendUrl, setAgentState, setActiveEdge, setDiagnosis, setFallbackOrigin, setReportCard]
   );
 
   // No mockFallback here on purpose — WorkflowDAG's own "Trigger Full Heal
@@ -221,7 +259,7 @@ export default function App() {
   // Mock Triage Card" buttons) already serve as offline demo mode. Adding
   // an automatic synthetic feed on top would fight the manual controls
   // for the same state.
-  useWebSocket<WsEnvelope>({ url: BACKEND_WS_URL, onMessage: handleWsMessage });
+  const { connected } = useWebSocket<WsEnvelope>({ url: wsUrl, onMessage: handleWsMessage });
 
   const handleBreakIt = async () => {
     setBreakItDisabled(true);
@@ -229,7 +267,7 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
 
     try {
-      await fetch(`${BACKEND_URL}/demo/inject`, {
+      await fetch(`${backendUrl}/demo/inject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -252,6 +290,13 @@ export default function App() {
           AI Factory Sentinel
         </span>
         <div className="flex items-center gap-2">
+          <ConnectionSettings
+            host={backendHost}
+            isDefault={backendHost === DEFAULT_HOST}
+            connected={connected}
+            onSave={handleHostSave}
+            onReset={handleHostReset}
+          />
           {DEBUG_CONTROLS && (
             <>
               <button
@@ -305,19 +350,19 @@ export default function App() {
       <div className="flex-1 min-h-0 grid grid-cols-[60%_40%]">
         <WorkflowDAG />
         <div className="border-l border-slate-800 min-w-0">
-          <AuditLogStream wsUrl={BACKEND_WS_URL} />
+          <AuditLogStream wsUrl={wsUrl} />
         </div>
       </div>
 
       <div className="h-[20%] min-h-[160px] shrink-0 border-t border-slate-800 grid grid-cols-2">
-        <CircuitBreakerPanel />
-        <SandboxTerminal wsUrl={BACKEND_WS_URL} />
+        <CircuitBreakerPanel backendUrl={backendUrl} />
+        <SandboxTerminal wsUrl={wsUrl} />
       </div>
 
       {showSimilarity && (
         <div className="absolute bottom-[20%] left-0 w-[60%] h-[300px] z-30 border-t border-r border-slate-700">
           <Suspense fallback={null}>
-            <SimilarityGraph />
+            <SimilarityGraph wsUrl={wsUrl} />
           </Suspense>
         </div>
       )}

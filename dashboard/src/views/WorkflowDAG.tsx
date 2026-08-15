@@ -9,6 +9,13 @@ import { useDashboardStore, type AgentId } from "../store/dashboardStore";
 
 const nodeTypes = { agentOrb: AgentOrbNode };
 
+// runHealSequence/triggerEscalation below are scripted, local-only
+// animations, not driven by the real backend — they exist for offline
+// rehearsal. Gated behind the same flag as App.tsx's "Show Mock ..."
+// buttons so they can't be mistaken for live backend activity during an
+// actual demo, and clearly relabeled below regardless.
+const REHEARSAL_CONTROLS = import.meta.env.VITE_DEBUG_CONTROLS === "true";
+
 const POSITIONS: Record<AgentId, { x: number; y: number }> = {
   sentinel: { x: 50, y: 180 },
   orchestrator: { x: 350, y: 180 },
@@ -128,18 +135,24 @@ export default function WorkflowDAG() {
     <PanelShell title="Workflow DAG">
       <div className="relative h-full w-full">
         <div className="absolute top-2 left-2 z-10 flex gap-2">
-          <button
-            onClick={runHealSequence}
-            className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300"
-          >
-            Trigger Full Heal Sequence
-          </button>
-          <button
-            onClick={triggerEscalation}
-            className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300"
-          >
-            Trigger Escalation
-          </button>
+          {REHEARSAL_CONTROLS && (
+            <>
+              <button
+                onClick={runHealSequence}
+                title="Scripted local animation — not driven by the real backend"
+                className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300"
+              >
+                Rehearsal: Full Heal Sequence
+              </button>
+              <button
+                onClick={triggerEscalation}
+                title="Scripted local animation — not driven by the real backend"
+                className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300"
+              >
+                Rehearsal: Escalation
+              </button>
+            </>
+          )}
           <button
             onClick={resetAll}
             className="text-xs px-3 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300"
