@@ -20,6 +20,7 @@ import AgentGraph from "../components/panels/AgentGraph";
 import LiveFeedPanel from "../components/panels/LiveFeedPanel";
 import SandboxTerminalPanel from "../components/panels/SandboxTerminalPanel";
 import FaultConsole from "../components/panels/FaultConsole";
+import ConnectionSettings from "../components/panels/ConnectionSettings";
 import ThroughputMeter from "../components/panels/ThroughputMeter";
 import TriageModal from "../components/panels/TriageModal";
 import ControlDock, { type DockPanel } from "../components/panels/ControlDock";
@@ -75,6 +76,7 @@ export default function ControlPlane() {
             <span className={`h-1.5 w-1.5 rounded-full ${kind === "live" ? "bg-state-healthy" : "bg-accent"} ${connected ? "animate-pulse-slow" : ""}`} />
             {kind === "live" ? "Live backend" : "Simulated"}
           </span>
+          <ConnectionSettings />
           <FaultConsole />
         </div>
       </header>

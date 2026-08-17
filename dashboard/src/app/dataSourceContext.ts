@@ -8,6 +8,15 @@ import type { DataSource } from "../data/types";
 export interface SourceContextValue {
   source: DataSource;
   kind: "live" | "simulated" | "connecting";
+  /** Current backend host (host:port, no protocol) the live source is
+   * pointed at — ported from main's ConnectionSettings.tsx: lets anyone
+   * repoint the deployed dashboard at a different backend (e.g. a demo
+   * host's LAN IP) at runtime, without a rebuild. Persisted to
+   * localStorage so the choice survives a reload. */
+  host: string;
+  defaultHost: string;
+  setHost: (host: string) => void;
+  resetHost: () => void;
 }
 
 export const SourceContext = createContext<SourceContextValue | null>(null);
