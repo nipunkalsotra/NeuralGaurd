@@ -286,6 +286,7 @@ class Orchestrator:
             agent_name="OptimizationAgent",
             fallback_used=True,  # cuOpt is always skipped — OR-Tools/greedy is always a fallback
             fallback_origin=plan["solver_used"],
+            projected_throughput_pct=plan["projected_throughput_pct"],
         )
         try:
             await broadcast_audit_event(worker_id=worker_id, audit_record=record)

@@ -1,10 +1,10 @@
 // src/components/panels/ControlDock.tsx
 // Floating glass tab bar for the genuinely secondary panels — Sandbox
 // output and the Similarity trace, which don't need to be visible at
-// all times the way the audit stream and circuit status do (those now
-// live in the persistent LiveFeedPanel sidebar instead). On narrow
-// screens, where there's no room for that sidebar, a "Live Feed" tab
-// reappears here as a fallback so nothing is desktop-only.
+// all times the way the agent list and audit stream do (those now live
+// in the persistent left/middle columns instead). On narrow screens,
+// where there's no room for those columns, a "Live Feed" tab reappears
+// here as a fallback so nothing is desktop-only.
 import { motion } from "framer-motion";
 import { ScrollText, Terminal, Activity } from "lucide-react";
 import { useDashboardStore } from "../../store";

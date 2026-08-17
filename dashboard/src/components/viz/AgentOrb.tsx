@@ -119,6 +119,25 @@ function AgentOrbNode({ data }: { data: AgentOrbData }) {
           />
         )}
 
+        {/* One-shot expanding "ping" — the topology previously only
+            updated via a continuous breathing pulse, easy to read as
+            static at a glance. Keying this on data.state means React
+            mounts a fresh instance (replaying the one-shot animation)
+            every time the state actually changes, giving an unmissable
+            "something just happened here" flash on top of the ambient
+            pulse. */}
+        {!reduced && (
+          <motion.div
+            key={`ping-${data.state}`}
+            className="absolute rounded-full border-2 pointer-events-none"
+            style={{ borderColor: rgb }}
+            initial={{ opacity: 0.9, scale: 1 }}
+            animate={{ opacity: 0, scale: 1.9 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            aria-hidden="true"
+          />
+        )}
+
         <motion.div
           key={data.state}
           animate={{ scale: [1, 1.1, 1] }}

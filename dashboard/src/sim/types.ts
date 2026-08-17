@@ -45,6 +45,12 @@ export interface AuditRecord {
   root_cause?: string | null;
   fix_type?: string | null;
   affected_field?: string | null;
+  /** Additive, mirrors the backend's identical field: carried only on
+   * the OPTIMIZATION_COMPLETE record, null everywhere else. Lets the
+   * throughput meter react to the real solver output the instant this
+   * WS envelope arrives, instead of polling a separate REST endpoint
+   * and racing a sub-second incident window. */
+  projected_throughput_pct?: number | null;
   previous_hash: string;
   current_hash: string;
 }

@@ -136,15 +136,32 @@ export class Orchestrator {
     const problem = this.optimizationAgent.formulateProblem(workerId, items, workers);
     const plan = this.optimizationAgent.solve(problem);
     this.reroutePlans.set(workerId, plan);
-    this.broadcast("audit_event", "reroute_computed", workerId, {
-      timestamp: nowIso(),
+
+    // Previously hand-built a broadcast object here instead of going
+    // through the real TrustChainLogger — missing current_hash/
+    // previous_hash entirely (not actually hash-chained) and not
+    // matching the AuditRecord shape every other consumer assumes,
+    // exactly mirroring backend orchestrator.py's on_optimization_complete:
+    // Optimization has no WorkerState of its own, so this can't go
+    // through this.transition() (which enforces FSM legality) — it logs
+    // directly via the audit logger using the worker's CURRENT state for
+    // both from/to (a side-channel event, not an FSM move), same as the
+    // real backend. This is also what makes projected_throughput_pct
+    // actually reach the store as a real field on a real record, so the
+    // throughput meter can react to it the instant this envelope
+    // arrives instead of polling a separate metrics call.
+    const current = this.getState(workerId);
+    const record = await this.audit.logTransition({
       worker_id: workerId,
+      from_state: current,
+      to_state: current,
       trigger_event: "OPTIMIZATION_COMPLETE",
       agent_name: "OptimizationAgent",
-      solver_used: plan.solver_used,
+      fallback_used: true, // cuOpt is always skipped — OR-Tools/greedy is always a fallback
+      fallback_origin: plan.solver_used,
       projected_throughput_pct: plan.projected_throughput_pct,
-      excluded_workers: plan.excluded_workers,
     });
+    this.broadcast("audit_event", "transition_logged", workerId, record);
   }
 
   private async onDiagnosisComplete(event: { worker_id: string } & Record<string, unknown>): Promise<void> {

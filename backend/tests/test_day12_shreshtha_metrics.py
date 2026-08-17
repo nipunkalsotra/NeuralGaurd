@@ -108,6 +108,57 @@ async def test_throughput_tracker_reflects_real_reroute_plan(tmp_path):
     assert ThroughputTracker(orch).current_pct() == 82.5
 
 
+@pytest.mark.asyncio
+async def test_throughput_tracker_decays_back_to_baseline_once_worker_resumes(tmp_path):
+    """The bug this test guards against: throughput used to stay pinned
+    at the last-ever reroute number forever, even long after the worker
+    it belonged to had fully healed. Walks a worker through the real,
+    legal FSM path to RESUMED and confirms the number actually recovers
+    — this is the "increase and decrease" behavior, driven entirely by
+    Orchestrator.worker_states, not a second/fabricated signal."""
+    audit_logger = TrustChainLogger(log_file=str(tmp_path / "audit.jsonl"))
+    orch = Orchestrator(event_bus=EventBus(), audit_logger=audit_logger)
+
+    await orch.event_bus.publish("OPTIMIZATION_COMPLETE", {
+        "worker_id": "worker-recovers", "assignments": [], "excluded_workers": [],
+        "projected_throughput_pct": 82.5, "solver_used": "or-tools",
+    })
+    assert ThroughputTracker(orch).current_pct() == 82.5  # dips while open
+
+    for to_state, trigger, agent in [
+        (WorkerState.LOOP_SUSPECTED, "LOOP_SUSPECTED", "SentinelAgent"),
+        (WorkerState.DIAGNOSING, "DIAGNOSIS_STARTED", "Orchestrator"),
+        (WorkerState.REMEDIATING, "DIAGNOSIS_COMPLETE", "TriageAgent"),
+        (WorkerState.VERIFYING, "REMEDIATION_ATTEMPTED", "RemediationAgent"),
+        (WorkerState.RESUMED, "REMEDIATION_SUCCESS", "RemediationAgent"),
+    ]:
+        await orch.transition("worker-recovers", to_state, trigger, agent)
+
+    assert ThroughputTracker(orch).current_pct() == 100.0  # recovers once settled
+
+
+@pytest.mark.asyncio
+async def test_throughput_tracker_stays_degraded_when_escalated(tmp_path):
+    """ESCALATED means still broken, waiting on a human — not the same
+    as RESUMED. Throughput should NOT silently recover just because the
+    FSM reached a terminal state; only RESUMED counts as healed."""
+    audit_logger = TrustChainLogger(log_file=str(tmp_path / "audit.jsonl"))
+    orch = Orchestrator(event_bus=EventBus(), audit_logger=audit_logger)
+
+    await orch.event_bus.publish("OPTIMIZATION_COMPLETE", {
+        "worker_id": "worker-escalates", "assignments": [], "excluded_workers": [],
+        "projected_throughput_pct": 85.0, "solver_used": "greedy_round_robin",
+    })
+    for to_state, trigger, agent in [
+        (WorkerState.LOOP_SUSPECTED, "LOOP_SUSPECTED", "SentinelAgent"),
+        (WorkerState.DIAGNOSING, "DIAGNOSIS_STARTED", "Orchestrator"),
+        (WorkerState.ESCALATED, "LOW_CONFIDENCE", "Orchestrator"),
+    ]:
+        await orch.transition("worker-escalates", to_state, trigger, agent)
+
+    assert ThroughputTracker(orch).current_pct() == 85.0  # still degraded
+
+
 # ── Report Card aggregation ───────────────────────────────────────────
 
 @pytest.mark.asyncio

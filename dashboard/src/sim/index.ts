@@ -89,12 +89,29 @@ export class SentinelSimulator {
     return this.triageAgent.cacheHits * 250;
   }
 
-  /** Mirrors throughput_tracker.py: 100% baseline with no active
-   * incident, else the most recent real reroute plan's projected figure. */
+  /** Mirrors the fixed throughput_tracker.py: 100% baseline whenever
+   * nothing is actively degraded right now, else the real reroute plan
+   * belonging to whichever worker is still actively open. Previously
+   * this only ever looked at the LAST plan ever produced, so throughput
+   * stayed pinned at whatever the solver returned (typically 97%)
+   * forever, even long after every worker had fully RESUMED — the same
+   * staleness bug the Python backend had, ported along with everything
+   * else. RESUMED/HEALTHY count as settled (fully healed); ESCALATED
+   * does not (still broken, waiting on a human). */
+  private static readonly SETTLED_STATES = new Set<WorkerState>(["HEALTHY", "RESUMED"]);
+
   getThroughputPct(): number {
-    const plans = Array.from(this.orchestrator.reroutePlans.values());
-    const latest = plans[plans.length - 1];
-    return latest ? latest.projected_throughput_pct : 100;
+    const entries = Array.from(this.orchestrator.reroutePlans.entries()).reverse();
+    for (const [workerId, plan] of entries) {
+      const state = this.orchestrator.workerStates.get(workerId);
+      // No explicit state at all means this worker's FSM transitions
+      // were never exercised (e.g. a plan recorded in isolation) —
+      // treat it as still open rather than discard it, same as the
+      // Python fix.
+      if (state !== undefined && SentinelSimulator.SETTLED_STATES.has(state)) continue;
+      return plan.projected_throughput_pct;
+    }
+    return 100;
   }
 
   killService(service: ServiceName): void {
