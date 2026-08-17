@@ -40,7 +40,7 @@ def test_sentinel_nim_to_sentence_transformers(sentinel_agent):
 
 def test_sentinel_sentence_transformers_to_hash(sentinel_agent):
     with patch.object(sentinel_agent.nim_client, "embed", side_effect=Exception("NIM down")):
-        with patch.object(sentinel_agent.local_embedder, "encode", side_effect=Exception("model OOM")):
+        with patch.object(sentinel_agent._get_local_embedder(), "encode", side_effect=Exception("model OOM")):
             result = sentinel_agent.embed("test")
     assert isinstance(result, list)
     assert len(result) == 1  # hash fallback signature

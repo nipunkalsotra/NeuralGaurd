@@ -1,6 +1,6 @@
 # cuOpt Schema Verification — Day 11
 
-**Owner:** Rashi | **Date:** 2026-08-13
+**Owner:** Nipun | **Date:** 2026-08-13
 
 ## Status: N/A — no live verification performed
 
@@ -34,7 +34,7 @@ response schema here before wiring `OptimizationAgent` to call it — do
 not fabricate a verified schema without a real response to check it
 against.
 
-## Fallback-path support (the other half of Rashi's Day-11 task)
+## Fallback-path support (the other half of Nipun's Day-11 task)
 Verified alongside Nipun's Day-11 fallback chain suite —
 `test_optimization_ortools_to_greedy` (Optimization) and
 `test_sentinel_nim_to_sentence_transformers` /

@@ -15,7 +15,7 @@ actually in the repo — not copied blind from the planning guides.
   (event-bus wiring, WebSocket schema mismatches, wrapper networking)
   rather than assuming components worked together.
 
-## Rashi — Algorithms & Optimization
+## Nipun — Algorithms & Optimization
 - Built Sentinel Agent with a 3-tier fallback chain (NVIDIA NIM →
   sentence-transformers → hash exact-match) achieving sub-second loop
   detection via a dual-condition trigger (cosine similarity + repeated
@@ -41,7 +41,7 @@ actually in the repo — not copied blind from the planning guides.
   aggregation APIs, computing every metric from real audit-log events
   rather than hardcoded placeholder values.
 
-## Tushar — Control Plane Interface
+## Shreshtha — Control Plane Interface
 - Built a real-time React 18 dashboard with WebSocket streaming, Framer
   Motion animations, and an interactive React Flow DAG visualizing a
   self-healing agent workflow live.

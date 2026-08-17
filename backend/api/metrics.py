@@ -2,7 +2,7 @@
 """
 Metrics API — Day 12 (Shreshtha).
 GET /api/metrics/tokens, GET /api/metrics/throughput, GET /api/metrics
-(the combined ReportCardMetrics Tushar's Post-Heal Report Card will wire
+(the combined ReportCardMetrics Shreshtha's Post-Heal Report Card will wire
 to on Day 13). Reads the same shared _orchestrator singleton
 api/fault_injection.py already constructs, so this reports on the exact
 same audit log / reroute plans the rest of the backend is producing —

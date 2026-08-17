@@ -1,6 +1,6 @@
 # Demo Timing — Single Source of Truth
 
-**Owner:** Tushar (Day 13, per his guide's explicit Step 5: "Document the
+**Owner:** Shreshtha (Day 13, per his guide's explicit Step 5: "Document the
 final timing in `docs/demo_timing.md`. This is the single source of
 truth for Demo Day.") | **Narrative beats:** `docs/demo_script.md` (Nipun)
 
