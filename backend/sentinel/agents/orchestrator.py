@@ -142,7 +142,7 @@ class Orchestrator:
 
         # Day 12: which embedding source detected this loop — drives the
         # Sentinel node's fallback ring (blue for sentence-transformers,
-        # per Tushar's guide; "NIM" itself is never a fallback).
+        # per Shreshtha's guide; "NIM" itself is never a fallback).
         embedding_origin = event.get("embedding_origin")
         await self.transition(
             worker_id, WorkerState.LOOP_SUSPECTED,

@@ -36,6 +36,7 @@ from sentinel.agents.remediation_agent import RemediationAgent
 from sentinel.agents.optimization_agent import OptimizationAgent
 from sentinel.agents.orchestrator import Orchestrator
 from sentinel.event_bus.asyncio_queue_bus import EventBus
+from api.websocket import broadcast_similarity
 
 logger = logging.getLogger("sentinel.fault_injection")
 router = APIRouter()
@@ -161,10 +162,16 @@ async def inject_fault(request: InjectRequest):
     log_line = None
     if fault:
         log_line = f"Error: {fault['log_message']} (fault: {fault['type']})"
-        for _ in range(4):
+        for step in range(4):
             loop_event = _sentinel.detect_loop(
                 request.target, log_line, fault["error_signature"],
             )
+            # Real per-step similarity score, once the sliding window has
+            # enough samples to compute one — gives the dashboard's
+            # Similarity Graph an actual live trace (see sentinel_agent.py's
+            # last_similarity / websocket.py's broadcast_similarity).
+            if _sentinel.last_similarity is not None:
+                await broadcast_similarity(request.target, _sentinel.last_similarity, float(step))
 
         if loop_event:
             # Publish onto the shared EventBus rather than faking a single

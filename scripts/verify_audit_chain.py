@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hash Chain Verification Script — Day 14 (Rashi).
+Hash Chain Verification Script — Day 14 (Nipun).
 
 Her pre-demo checklist names this explicitly ("Hash chain verification
 script passes") as something to run 30 minutes before the demo, but no

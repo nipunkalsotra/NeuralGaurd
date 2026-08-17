@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Pre-Demo Smoke Check — Day 14 (Shreshtha + Rashi).
+Pre-Demo Smoke Check — Day 14 (Shreshtha + Nipun).
 
 Both guides list an overlapping set of "run this 30-60 min before the
 demo" checks:
   Shreshtha: "Test /health endpoint, test WebSocket connection, test
               one remediate call"
-  Rashi:     "Fault injection endpoint responds... Audit logger is
+  Nipun:     "Fault injection endpoint responds... Audit logger is
               writing... Hash chain verification script passes"
 
 This script runs every one of those that's actually a server-side,

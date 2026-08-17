@@ -1,6 +1,6 @@
 # Demo Script — AI Factory Sentinel
 
-**Owner:** Nipun (Day 12) | **Locked timing shared with:** Tushar (animation sync)
+**Owner:** Nipun (Day 12) | **Locked timing shared with:** Shreshtha (animation sync)
 
 60-90 second narrative, six acts. Every visual beat below is a real,
 already-implemented dashboard element (button text, toast copy, and
@@ -102,7 +102,7 @@ metrics animate 0 → final value over 1.5s, staggered 0.1s apart:
 | `escalations` | Escalations |
 | `fallbacks_triggered` | Fallbacks |
 
-**Status (Day 12):** Card renders with placeholder values per Tushar's
+**Status (Day 12):** Card renders with placeholder values per Shreshtha's
 guide — backend wiring to the real `GET /api/metrics` endpoint (built
 Day 12 by Shreshtha, see `docs/api_contracts.md`'s Day 12 section) is
 explicitly Day 13 scope. Until wired, narrate the placeholder numbers as
@@ -111,7 +111,7 @@ run.
 
 ---
 
-## Timing notes for Tushar (animation sync)
+## Timing notes for Shreshtha (animation sync)
 
 - Act boundaries above are targets, not hard cuts — real backend timing
   (actual LLM/wrapper latency) will vary run to run. Rehearse against

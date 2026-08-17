@@ -170,6 +170,25 @@ async def broadcast_audit_event(worker_id: str, audit_record: Dict[str, Any]) ->
     )
 
 
+async def broadcast_similarity(worker_id: str, similarity: float, time_marker: float) -> None:
+    """
+    Broadcast one real cosine-similarity sample from SentinelAgent's
+    sliding-window loop detection. Added because the dashboard's
+    Similarity Graph previously had no real data source at all — no
+    endpoint emitted this envelope type, so the chart always fell back to
+    Math.random() noise regardless of whether the backend was reachable.
+    `time_marker` is a monotonic step counter (not wall-clock), matching
+    what the chart's x-axis expects.
+    """
+    payload = json.dumps({"worker_id": worker_id, "similarity": similarity, "time": time_marker})
+    await broadcast_envelope(
+        msg_type="similarity",
+        event_type="similarity_sample",
+        worker_id=worker_id,
+        payload=payload,
+    )
+
+
 async def route_message(websocket: WebSocket, message: Dict[str, Any]) -> None:
     """
     Type-based message router for messages the DASHBOARD sends TO us

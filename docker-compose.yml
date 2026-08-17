@@ -48,14 +48,26 @@ services:
       - full-stack
 
   dashboard:
-    build: ./dashboard
+    build:
+      context: ./dashboard
+      # Vite inlines VITE_* env vars at build time (see Dockerfile), so
+      # these must be build args, not container `environment:` — a
+      # runtime env var has zero effect on an already-built static
+      # bundle. Previously VITE_WS_URL wasn't set anywhere in this file
+      # at all, so /ws/stream never connected under `docker compose up`.
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:8000}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8000/ws/stream}
     ports:
       - "3000:3000"
-    volumes:
-      - ./dashboard:/app
-      - /app/node_modules
-    environment:
-      - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://localhost:8000}
+    depends_on:
+      - backend
+    # Previously missing this profile entirely while `backend` and
+    # `wrapper` both had it — meaning a bare `docker compose up` (no
+    # --profile flag) started ONLY the dashboard, against a backend that
+    # was never brought up. All three services now come up together.
+    profiles:
+      - full-stack
 
 volumes:
   audit_logs:

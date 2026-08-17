@@ -81,7 +81,7 @@ def live_wrapper_primary_mode():
     live subprocess in PRIMARY mode (NEMOCLAW_MODE=nemoclaw). This machine
     has no real `nemoclaw` binary, so PRIMARY mode here genuinely exercises
     the auto-fallback path end-to-end -- the actual point of Day 9's
-    integration test, not a simulation of one. Used by Nipun's and Rashi's
+    integration test, not a simulation of one. Used by Nipun's and Nipun's
     Day 9 tests, which each drive their own owned layer (Orchestrator /
     fault injection) against this one real, shared wrapper process.
 

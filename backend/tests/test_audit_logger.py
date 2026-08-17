@@ -1,6 +1,6 @@
 """
 Audit logger tests — hash chain tamper detection.
-Blocker check (Rashi's Day 3 spec): write 3 records, tamper line 2,
+Blocker check (Nipun's Day 3 spec): write 3 records, tamper line 2,
 verify_chain() must fail.
 """
 

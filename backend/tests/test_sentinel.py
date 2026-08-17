@@ -50,7 +50,7 @@ def test_embed_both_fail_falls_back_to_hash(agent):
     """NIM and sentence-transformers both down -> hash exact-match, last resort."""
     with patch.object(agent.nim_client, "embed", side_effect=Exception("NIM down")):
         with patch.object(
-            agent.local_embedder, "encode", side_effect=Exception("model OOM")
+            agent._get_local_embedder(), "encode", side_effect=Exception("model OOM")
         ):
             result = agent.embed("test output")
     assert isinstance(result, list)
@@ -108,7 +108,7 @@ def test_detect_loop_both_down(agent):
     """NIM and sentence-transformers both down -> hash exact-match fallback."""
     with patch.object(agent.nim_client, "embed", side_effect=Exception("NIM down")):
         with patch.object(
-            agent.local_embedder, "encode", side_effect=Exception("model OOM")
+            agent._get_local_embedder(), "encode", side_effect=Exception("model OOM")
         ):
             result = None
             for _ in range(4):

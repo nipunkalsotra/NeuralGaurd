@@ -82,8 +82,8 @@ live.
 None of these three plans can be *tested* end-to-end from here in the
 way that matters most: actually pulling the plug on something live
 during a rehearsal and watching the team react in real time. That's
-Day 14's "Full Dress Rehearsal + Backup Plan Test" (per Tushar's and
-Rashi's guides) — Plan B's automatic behavior is already proven
+Day 14's "Full Dress Rehearsal + Backup Plan Test" (per Shreshtha's and
+Nipun's guides) — Plan B's automatic behavior is already proven
 correct at the code level (today's stress test), but confirming the
 *team* knows what to say and do when it happens is a rehearsal
 exercise, not something to check off here.

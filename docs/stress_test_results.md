@@ -1,6 +1,6 @@
 # Wrapper Stress Test Results — Day 13
 
-**Owners:** Shreshtha + Rashi (both individual guides assign this exact same task —
+**Owners:** Shreshtha + Nipun (both individual guides assign this exact same task —
 40 concurrent `/v1/remediate` requests, same targets — so it was run once, for
 real, rather than duplicated.)
 

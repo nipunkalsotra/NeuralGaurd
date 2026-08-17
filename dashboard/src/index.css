@@ -1,23 +1,381 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist-mono";
 
-@layer base {
-  html, body, #root {
-    height: 100%;
-    margin: 0;
-  }
-  body {
-    background-color: theme(--color-slate-950);
-    color: theme(--color-slate-100);
-    -webkit-font-smoothing: antialiased;
+/*
+ * Design tokens — single source of truth, Tailwind v4 native @theme.
+ * Replaces the old tailwind.config.js, which targeted v3's CommonJS
+ * config format and was never actually loaded by v4's @tailwindcss/vite
+ * plugin (no @config directive existed to bridge them) — every token
+ * in it was dead. Everything below IS live: @theme keys generate real
+ * utilities (bg-canvas, text-state-healthy, font-sans, ease-premium, …).
+ */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", monospace;
+
+  /* Neutral scale — near-black canvas, cool-neutral surfaces, no pure grey */
+  --color-canvas: #0c0c0c;
+  --color-surface-1: #101013;
+  --color-surface-2: #15161a;
+  --color-surface-3: #1c1e23;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+  --color-text-primary: #ffffff;
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
+  --color-text-tertiary: rgba(255, 255, 255, 0.4);
+
+  /* Brand accent — a single deliberate hue, kept out of the FSM's
+     semantic palette below so it never gets misread as system state. */
+  --color-accent: #3d81e3;
+  --color-accent-2: #2c66bb;
+  --color-accent-soft: rgba(61, 129, 227, 0.14);
+  --color-cyan-bright: #00d2ff;
+  --color-cyan-pale: #a4f4fd;
+  --color-navy-deep: #0b2551;
+
+  /* FSM semantic state — the ONLY place color carries meaning.
+     Matches the real 7-state machine in orchestrator.py exactly. */
+  --color-state-healthy: #10b981;
+  --color-state-suspected: #fbbf24;
+  --color-state-diagnosing: #60a5fa;
+  --color-state-remediating: #f97316;
+  --color-state-verifying: #8b5cf6;
+  --color-state-escalated: #f43f5e;
+  --color-state-fallback: #facc15;
+
+  /* Named eases — Tailwind v4 generates ease-premium / ease-snap utilities */
+  --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-snap: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --animate-pulse-slow: pulse-slow 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  @keyframes pulse-slow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
   }
 }
 
-/* Section 11.3 palette — hardcoded hex, matches Tailwind's default emerald/amber/etc scale */
-:root {
-  --status-healthy: #10b981;
-  --status-suspected: #fbbf24;
-  --status-remediating: #f97316;
-  --status-escalated: #f43f5e;
-  --status-verifying: #8b5cf6;
-  --status-fallback: #facc15;
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    scroll-behavior: smooth;
+    color-scheme: dark;
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background-color: var(--color-canvas);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "ss01" 1, "cv01" 1;
+  }
+  ::selection {
+    background: rgba(61, 129, 227, 0.3);
+    color: white;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+  }
+
+  /* Thin, quiet scrollbars — WebKit + Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 8px;
+  }
+  *::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+}
+
+@layer utilities {
+  /* Global reduced-motion contract: every non-essential motion class in
+     the app opts INTO reduction via this attribute selector rather than
+     each component reimplementing its own media-query guard. Set on
+     <html data-reduce-motion="true"> by useReducedMotion() (see
+     src/hooks/useReducedMotion.ts) so JS-driven GSAP/Framer code and
+     pure-CSS animations share exactly one source of truth. */
+  html[data-reduce-motion="true"] .motion-safe-only {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Subtle film-grain texture, fixed + pointer-events:none per the
+   performance guardrail — never attached to a scrolling container. */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---------------------------------------------------------------------
+   Liquid glass
+   A double-layer treatment: a near-transparent luminosity-blended fill,
+   plus a masked 1.4px gradient ring on ::before that is bright at the
+   top and bottom edges and fully transparent through the middle. That
+   vertical falloff is what reads as a physical bevel catching light —
+   a flat 1px border is what makes most "glassmorphism" look cheap.
+   --------------------------------------------------------------------- */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.01);
+  background-blend-mode: luminosity;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: none;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.4px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.15) 20%,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, 0.15) 80%,
+    rgba(255, 255, 255, 0.45) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------
+   Shiny gradient headline — background-size 200% + an animated
+   background-position sweep, clipped to the glyphs. The SVG noise filter
+   layered on top breaks up the banding a wide dark→light gradient
+   otherwise produces across large display type.
+   --------------------------------------------------------------------- */
+@keyframes shiny {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.animate-shiny { animation: shiny 6s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shiny {
+    animation: none;
+    /* Park the sweep mid-gradient so the headline still resolves to the
+       intended cyan rather than the near-black gradient endpoints. */
+    background-position: 50% center;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   Cinematic roadmap cards. Kept as plain CSS rather than utilities
+   because the radius, min-height and hover transform are a matched set;
+   splitting them across a dozen Tailwind classes made the intent
+   unreadable at the call site.
+   --------------------------------------------------------------------- */
+.c3-section {
+  position: relative;
+  padding: 40px 20px 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: hidden;
+}
+.c3-watermark-container {
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
+  text-align: center;
+  margin-top: 40px;
+  z-index: 2;
+}
+.c3-watermark-main {
+  font-size: 9rem;
+  font-weight: 800;
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+  filter: url(#c3-noise);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.c3-watermark-line-1 { color: #fff; }
+.c3-watermark-line-2 {
+  background: linear-gradient(to right, #091020 0%, #0b2551 25%, #a4f4fd 65%, #00d2ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.c3-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  width: 100%;
+  max-width: 1100px;
+  margin-top: 60px;
+  position: relative;
+  z-index: 3;
+}
+.c3-card {
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.4));
+  backdrop-filter: blur(14px) brightness(0.91);
+  -webkit-backdrop-filter: blur(14px) brightness(0.91);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 44px;
+  padding: 50px 24px;
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+  position: relative;
+}
+.c3-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 50%);
+  pointer-events: none;
+}
+.c3-card:hover {
+  background: rgba(15, 15, 15, 0.6);
+  border-color: rgba(34, 211, 238, 0.7);
+  transform: translateY(-12px) scale(1.01);
+}
+.c3-card-featured {
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.55));
+}
+.c3-tier-small { font-size: 1.1rem; font-weight: 400; color: rgba(255, 255, 255, 0.6); }
+.c3-tier-large {
+  font-size: 2.2rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin-top: 8px;
+  line-height: 1.08;
+}
+.c3-desc {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.45);
+  min-height: 3.2em;
+  margin-top: 16px;
+  margin-bottom: 36px;
+  line-height: 1.5;
+}
+.c3-list { list-style: none; padding: 0; margin: 0; }
+.c3-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 18px;
+  line-height: 1.4;
+}
+.c3-check {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.c3-status {
+  align-self: center;
+  margin-top: auto;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 10px 28px;
+  border-radius: 100px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+}
+.c3-status-shipped { background: #fff; color: #000; border-color: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .c3-card:hover { transform: none; }
+}
+
+@media (max-width: 1024px) {
+  .c3-watermark-main { font-size: 3.5rem; filter: none; }
+  .c3-watermark-line-2 {
+    background: none;
+    -webkit-text-fill-color: #00d2ff;
+    color: #00d2ff;
+  }
+  .c3-grid {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    width: 100vw;
+    padding: 0 20px;
+    gap: 16px;
+    scrollbar-width: none;
+  }
+  .c3-grid::-webkit-scrollbar { display: none; }
+  .c3-card { flex: 0 0 320px; scroll-snap-align: center; }
+}
+
+/* ---------------------------------------------------------------------
+   Signal edge — the Control Plane's traveling data-flow pulse (see
+   components/viz/SignalEdge.tsx). Native CSS motion-path: the dot rides
+   the exact bezier the edge itself draws, not an approximation.
+   --------------------------------------------------------------------- */
+@keyframes signal-travel {
+  from { offset-distance: 0%; }
+  to { offset-distance: 100%; }
+}
+.signal-edge-pulse {
+  offset-rotate: 0deg;
+  animation: signal-travel 1.6s linear infinite;
+}
+@supports not (offset-path: path("M0 0")) {
+  /* No motion-path support: hide the riding dot rather than let it sit
+     at the SVG origin looking like a stray artifact. The glowing stroke
+     underneath still reads fine on its own. */
+  .signal-edge-pulse { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .signal-edge-pulse { animation: none; display: none; }
+}
+
+/* ---------------------------------------------------------------------
+   Glow text — reserved for the Control Plane's key live numbers and
+   headers (throughput %, section eyebrows, orb state readouts). Used
+   sparingly and deliberately, not blanket-applied — glow on everything
+   reads as worse than glow on nothing.
+   --------------------------------------------------------------------- */
+.text-glow-white {
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.55), 0 0 26px rgba(255, 255, 255, 0.22);
+}
+.text-glow-cyan {
+  text-shadow: 0 0 10px rgba(0, 210, 255, 0.65), 0 0 26px rgba(0, 210, 255, 0.3);
 }

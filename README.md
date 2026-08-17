@@ -1,15 +1,20 @@
-# AI Factory Sentinel
+# NeuralGuard
 
 **A self-healing agentic workflow orchestrator.** When a worker in an AI
 agent factory gets stuck in a loop — a schema change, a flaky
-downstream service, a timeout — Sentinel detects it in under a second,
-diagnoses the root cause, generates and verifies a patch, and reroutes
-work around the failure, with zero human intervention. Every step is
-backed by an independent fallback chain, so the system degrades
+downstream service, a timeout — NeuralGuard detects it in under a
+second, diagnoses the root cause, generates and verifies a patch, and
+reroutes work around the failure, with zero human intervention. Every
+step is backed by an independent fallback chain, so the system degrades
 gracefully instead of crashing whenever a third-party service is
-unavailable — which, on a zero-budget free-tier stack, is often.
+unavailable, and every state transition is written to a SHA-256
+hash-chained audit log — the entire healing history is tamper-evident.
 
-<img src="docs/assets/hero-animation.svg" alt="Self-healing cycle animation" width="100%" />
+The control-plane frontend is a 6-page site — a marketing/case-study
+front end plus a live control room — built around a from-scratch
+TypeScript port of the whole orchestration core, so the deployed site is
+genuinely explorable with **no backend required**: kill a service,
+inject a fault, and watch a real healing cycle run in the browser.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20Python%203.14-009688)](backend)
@@ -20,6 +25,7 @@ unavailable — which, on a zero-budget free-tier stack, is often.
 ## Table of contents
 
 - [What this actually is](#what-this-actually-is)
+- [The frontend](#the-frontend)
 - [Architecture](#architecture)
 - [How a healing cycle works](#how-a-healing-cycle-works)
 - [Fallback chains](#fallback-chains)
@@ -43,11 +49,34 @@ verification), and **Optimization** (workload rerouting) — coordinated
 by an **Orchestrator** running a 7-state finite-state machine, all
 publishing onto one shared **event bus**. Every state transition is
 written to an append-only, SHA-256 hash-chained audit log, so the
-entire healing history is tamper-evident.
+entire healing history is tamper-evident — mutate one record and every
+hash after it fails verification.
 
-Built by a 4-person team over 15 days as a Phase 1 milestone, on
-entirely free-tier infrastructure across physically separate machines
-connected over LAN — no shared cloud account, no paid API tier.
+Built end-to-end by two engineers, entirely on free-tier infrastructure
+across physically separate machines connected over LAN — no shared
+cloud account, no paid API tier.
+
+## The frontend
+
+`dashboard/` is a multi-page React 19 + TypeScript site, not a single
+debugging panel:
+
+| Route | Purpose |
+|---|---|
+| `/` | Landing — the product, the problem it solves, and a taste of the architecture |
+| `/how-it-works` | The full 6-step healing cycle |
+| `/architecture` | The FSM transition table, the audit chain (live, tamperable demo), the fallback matrix, the stack |
+| `/fallbacks` | Fully interactive — kill a real service, inject a fault, watch the fallback ladder degrade live |
+| `/dashboard` | The Control Plane — the real cinematic, real-time control room |
+| `/about` | The team, and every deliberate scope decision, stated plainly |
+
+The centerpiece is `dashboard/src/sim/` — a faithful TypeScript port of
+the backend's orchestration core (the FSM, the event bus, a real
+Web-Crypto SHA-256 hash chain, real circuit breakers, and all 4 agents'
+decision logic). A `DataSource` abstraction (`dashboard/src/data/`)
+means every panel in the Control Plane talks to exactly one connection,
+whichever is live — a real backend when one is reachable, this
+in-browser simulator otherwise — so the deployed site works standalone.
 
 ## Architecture
 
@@ -62,7 +91,7 @@ flowchart LR
     Orchestrator["Orchestrator<br/>7-state FSM"]
     Bus(["EventBus"])
     Audit[("TrustChain<br/>audit log")]
-    Dashboard["React Dashboard"]
+    Dashboard["React Control Plane"]
 
     Sentinel -->|LOOP_SUSPECTED| Bus
     Bus -->|concurrent dispatch| Orchestrator
@@ -74,8 +103,10 @@ flowchart LR
 ```
 
 Full diagrams — the FSM transition table, the end-to-end sequence
-diagram, all 4 fallback chains, and the dashboard's data flow — are in
-**[`docs/architecture.md`](docs/architecture.md)**.
+diagram, all 4 fallback chains — are in
+**[`docs/architecture.md`](docs/architecture.md)**, and rendered live
+(read directly from the real transition map, not hand-copied) on
+**[`/architecture`](dashboard/src/pages/Architecture.tsx)**.
 
 ## How a healing cycle works
 
@@ -111,14 +142,18 @@ dependency:
 
 Every fallback transition is visible live on the dashboard — a pulsing
 halo, a static ring, or a badge, depending on which agent and which
-source — not just logged silently.
+source — not just logged silently. Try it interactively, live, with no
+backend, on **[`/fallbacks`](dashboard/src/pages/Fallbacks.tsx)**.
 
 ## Tech stack
 
 **Backend:** Python 3.14, FastAPI, asyncio, httpx, OR-Tools,
 sentence-transformers, WebSockets.
-**Dashboard:** React 19, Vite, TypeScript, Tailwind CSS, Zustand,
-Framer Motion, React Flow, Recharts.
+**Dashboard:** React 19, Vite, TypeScript, Tailwind CSS v4, Zustand,
+Framer Motion, GSAP, React Flow, Recharts.
+**Simulator:** A from-scratch TypeScript port of the orchestration core
+— real FSM legality, a real Web Crypto SHA-256 hash chain, real circuit
+breaker state machines.
 **Wrapper:** FastAPI, mode-switches between a real NemoClaw CLI adapter
 and a mock simulator with an identical HTTP contract.
 **Infra:** Docker Compose, 3 services (backend, wrapper, dashboard),
@@ -138,21 +173,20 @@ docker compose --profile full-stack up --build
 
 First build downloads a local embedding model and ML dependencies —
 budget ~10 minutes on a clean machine. Needs an `ENV_FILE` pointing at
-your own API keys (`person1.env` is the default; copy `.env.example`
-and fill in your own `NVIDIA_NIM_API_KEY` / `GROQ_API_KEY` — never
-commit real keys, the `*.env` pattern is gitignored for exactly this
-reason).
+your own API keys (copy `.env.example` and fill in your own
+`NVIDIA_NIM_API_KEY` / `GROQ_API_KEY` — never commit real keys, the
+`*.env` pattern is gitignored for exactly this reason).
 
-### Dashboard only (against a remote or local backend)
+### Dashboard only — fully standalone, no backend needed
 
 ```bash
 cd dashboard
 npm install
-npm run dev
+npm run dev        # starts on :3000, running the in-browser simulator
 ```
 
-See **[`dashboard/README.md`](dashboard/README.md)** for environment
-variables, component architecture, and troubleshooting.
+Point `VITE_WS_URL` / `VITE_BACKEND_URL` at a real backend to connect
+live instead — see **[`dashboard/README.md`](dashboard/README.md)**.
 
 ### Backend only, without Docker
 
@@ -167,15 +201,21 @@ uvicorn api.main:app --reload
 
 ```
 .
-├── backend/            FastAPI app: agents, orchestrator, event bus, audit log, metrics
-│   ├── sentinel/        Agent implementations, fallback chains, caches, circuit breakers
-│   ├── api/             HTTP + WebSocket routes
-│   └── tests/           pytest suite (100+ tests)
-├── wrapper/             Mock/real NemoClaw CLI adapter service
-├── dashboard/            React control-plane UI
-├── docs/                 Architecture, API reference, contracts, verification scripts' output
-├── scripts/              Standalone ops scripts (audit chain verification, pre-demo checks)
-└── docker-compose.yml    3-service deployment
+├── backend/             FastAPI app: agents, orchestrator, event bus, audit log, metrics
+│   ├── sentinel/          Agent implementations, fallback chains, caches, circuit breakers
+│   ├── api/               HTTP + WebSocket routes
+│   └── tests/             pytest suite (100+ tests)
+├── wrapper/              Mock/real NemoClaw CLI adapter service
+├── dashboard/            React control-plane site — 6 routes + in-browser simulator
+│   └── src/
+│       ├── pages/          Landing, How It Works, Architecture, Fallbacks, Control Plane, About
+│       ├── sim/             TypeScript port of the orchestration core
+│       ├── data/            DataSource abstraction — live backend or simulator, one connection
+│       ├── store/           Single Zustand store, single envelope-ingestion point
+│       └── components/      primitives/, viz/, panels/, marketing/
+├── docs/                  Architecture, API reference, contracts, verification scripts' output
+├── scripts/               Standalone ops scripts (audit chain verification, pre-demo checks)
+└── docker-compose.yml     3-service deployment
 ```
 
 ## API reference
@@ -190,7 +230,8 @@ and the WebSocket envelope schema — are in
 | `POST /demo/inject` | Inject one of 4 fault types, drives the real pipeline |
 | `GET /api/metrics` | Post-Heal Report Card data |
 | `GET /api/circuit-status` | Per-service circuit breaker state |
-| `WS /ws/stream` | Live state/audit/sandbox event stream |
+| `GET /api/audit-log?limit=N` | Replay the persisted audit trail (survives a page refresh) |
+| `WS /ws/stream` | Live state/audit/similarity/sandbox event stream |
 | `GET /v1/status`, `POST /v1/remediate` | Wrapper service (mock/real NemoClaw) |
 
 ## Testing
@@ -211,62 +252,62 @@ python scripts/pre_demo_check.py
 
 | Person | Role |
 |---|---|
-| Nipun | SDK Lead & Fallback Architect |
-| Rashi | Algorithms & Optimization |
-| Shreshtha | Infrastructure & NemoClaw Specialist |
-| Tushar | Control Plane Interface |
-
-Detailed component-level docs and resume bullets per person:
-[`docs/resume_bullets.md`](docs/resume_bullets.md).
+| Nipun | Agent Intelligence & Resilience — the four autonomous agents, loop detection, LLM diagnosis, constrained-assignment rerouting, and the 3-tier fallback architecture |
+| Shreshtha | Orchestration, Infrastructure & Control Plane — the FSM orchestrator, the event bus, the TrustChain audit log, the wrapper service, and the entire React control-plane site |
 
 ## Known limitations & deliberate scope decisions
 
 Documented honestly rather than glossed over — see
-[`docs/api_contracts.md`](docs/api_contracts.md) for the full history
-of every finding across all 15 days:
+[`docs/api_contracts.md`](docs/api_contracts.md) for the fuller history:
 
 - **cuOpt is skipped project-wide.** Hosted API access was never
-  confirmed working during Phase 1 (no stable endpoint found). OR-Tools
-  — always intended as cuOpt's own fallback — is the practical primary
-  solver instead. Not a missing feature; a documented, honest scope
-  adjustment.
+  confirmed working (no stable endpoint found). OR-Tools — always
+  intended as cuOpt's own fallback — is the practical primary solver
+  instead. Not a missing feature; a documented, honest scope adjustment.
 - **In-memory only.** Caches, circuit breakers, and token counters
-  reset on process restart. Fine for a single-demo-run system; not
+  reset on process restart. Fine for a single-session demo system; not
   production-durable.
 - **Single-process by design.** The backend deliberately runs with one
   uvicorn worker — several agents hold in-memory singleton state
   (circuit breakers, caches) that multiple worker *processes* would
   silently fork into inconsistent copies.
+- **The in-browser simulator approximates two things honestly.** It
+  cannot call NVIDIA NIM/Nemotron or Groq directly (that would mean
+  shipping API keys client-side, which the real backend correctly never
+  does) — the two LLM-diagnosis tiers run the same real regex-based
+  extraction as the rule-based heuristic, presented at the confidence
+  and phrasing an LLM tier would produce. OR-Tools' CBC solver is
+  substituted with a real, exact brute-force/greedy assignment solver
+  (genuinely solving the same objective, not a stand-in number). Every
+  other piece — the FSM, the event bus, the SHA-256 hash chain, the
+  circuit breakers, the fallback ladder itself — is a full, unmocked
+  port.
 
 ## Future work
 
-Phase 2, not started — real gaps found during Phase 1 testing,
-intentionally deferred rather than rushed in before demo day:
+Real gaps found during development, intentionally deferred rather than
+rushed in:
 
 - **Async LLM/embedding clients.** `TriageAgent`, `SentinelAgent`'s
   external calls are currently synchronous `httpx` calls inside async
-  code — a slow real API response blocks the whole event loop. Fine
-  for a single-fault demo; a real concern under real concurrent load.
+  code — a slow real API response blocks the whole event loop.
 - **Lazy-load the sentence-transformers fallback model.** It currently
   loads eagerly at process startup, meaning the backend's ability to
   even boot depends on reaching HuggingFace — undermining the point of
   a *fallback* model needing the same network reachability as the
   primary just to exist.
-- **A persistent, live throughput counter on the dashboard.** The demo
-  narrative describes one (100% → 71% → 97%) but it only currently
-  renders inside the final Post-Heal Report Card. The data already
-  exists (`GET /api/metrics`) — just needs a standalone UI element.
 - **Dashboard component test suite.** Backend has 100+ pytest tests;
-  the dashboard has none yet beyond type-checking and linting.
-- **Persistence layer.** A real database (or at minimum a durable
-  file store with rotation) for the audit log and caches, instead of
+  the dashboard has a Vitest suite covering the simulator's core logic
+  but not yet full component coverage.
+- **Persistence layer.** A real database (or at minimum a durable file
+  store with rotation) for the audit log and caches, instead of
   in-memory state and a single growing JSONL file.
 - **Kubernetes deployment, authentication/OAuth2, observability
   (metrics/tracing), and a CI/CD pipeline** — explicitly out of scope
-  for this 15-day Phase 1 sprint, planned for Phase 2.
+  for now.
 - **Real cuOpt integration**, if/when hosted API access is confirmed
-  reliably available — the fallback-first design means this can slot
-  in without changing any calling code.
+  reliably available — the fallback-first design means this can slot in
+  without changing any calling code.
 
 ## License
 

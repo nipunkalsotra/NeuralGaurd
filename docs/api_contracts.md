@@ -28,7 +28,7 @@
 - `sandbox_log` should mirror real CLI banner style — `✓ Active gateway set to 'nemoclaw'` followed by command output — per `/docs/nemoclaw_cli.md`
 
 ## ReroutePlan (Optimization Agent output)
-**Owner:** Rashi | **Locked:** Day 3 (scaffold) | **Consumed by:** Nipun (Orchestrator, Day 6)
+**Owner:** Nipun | **Locked:** Day 3 (scaffold) | **Consumed by:** Nipun (Orchestrator, Day 6)
 
 ```json
 {
@@ -41,7 +41,7 @@ Day 3 note: `solve()` is a stub — returns empty `assignments`, real solver
 (cuOpt -> OR-Tools -> greedy) lands Day 4-6.
 
 ## Audit Log Event Format (for dashboard)
-**Owner:** Rashi/Nipun (logger) | **Consumed by:** Tushar (Audit Log Stream UI)
+**Owner:** Nipun/Nipun (logger) | **Consumed by:** Shreshtha (Audit Log Stream UI)
 
 ```json
 {
@@ -63,7 +63,7 @@ amber=LOOP_SUSPECTED, blue=DIAGNOSING, orange=REMEDIATING,
 violet=VERIFYING, rose=ESCALATED — matches master doc Section 11.3 palette.
 
 ## Orchestrator State Transitions (Day 5, Updated)
-**Owner:** Nipun | For: Tushar's Workflow DAG animations
+**Owner:** Nipun | For: Shreshtha's Workflow DAG animations
 
 Live end-to-end today: HEALTHY → LOOP_SUSPECTED → DIAGNOSING → REMEDIATING,
 with Optimization Agent dispatched genuinely in parallel (not stubbed).
@@ -103,8 +103,8 @@ ReroutePlan format (unchanged, locked):
 }
 ```
 
-## Circuit Breaker Service List (Day 6, for Tushar's Panel UI)
-**Owner:** Nipun | **Consumed by:** Tushar (Circuit Breaker Panel)
+## Circuit Breaker Service List (Day 6, for Shreshtha's Panel UI)
+**Owner:** Nipun | **Consumed by:** Shreshtha (Circuit Breaker Panel)
 
 Services with independent circuit breakers:
 | Service | Used by | States |
@@ -120,22 +120,22 @@ red=open (failed). Each breaker: 3 consecutive failures -> opens for 60s
 -> half-open probe -> closes on success or reopens on failure.
 
 ## Day 7 Status Note
-WebSocket schema sign-off with Tushar and all Sandbox Terminal / [MOCK MODE]
+WebSocket schema sign-off with Shreshtha and all Sandbox Terminal / [MOCK MODE]
 banner verification is DEFERRED — UI work is paused until backend
-(Nipun/Rashi/Shreshtha) reaches Day 8. Schema itself (docs/websocket_schema.md,
+(Nipun/Nipun/Shreshtha) reaches Day 8. Schema itself (docs/websocket_schema.md,
 locked by Shreshtha Day 3) is unaffected by this deferral — it will be
 verified against real dashboard code once UI work resumes.
 
-## Day 6-7 Status (Rashi, covered)
+## Day 6-7 Status (Nipun, covered)
 - cuOpt circuit breaker added to OR-Tools solve chain — closes remaining
   Day 6 gap (cuOpt itself remains explicitly skipped, per earlier decision).
 - Fault Injection Backend (POST /demo/inject) complete, all 4 fault types
   tested. Confirmed feeding into Sentinel's real detect_loop().
 - DEFERRED (UI phase): Health Indicators UI, 'Break It' button, WebSocket
   streaming of fault events to dashboard. Backend fault injection API is
-  fully functional and ready for Tushar to wire up once UI work resumes.
+  fully functional and ready for Shreshtha to wire up once UI work resumes.
 
-## Day 8 Status (Rashi, UI portion)
+## Day 8 Status (Nipun, UI portion)
 - Audit Log Stream UI: color-coding, expand-to-JSON, auto-scroll all
   confirmed working via mock data generator (real backend->UI wiring
   pending Day 9-10, since /demo/inject doesn't yet call Sentinel/
@@ -164,7 +164,7 @@ Mock wrapper stress test: 20 concurrent requests, 0 errors, 2.05s total — conf
 
 ## Day 9 Status (Shreshtha) — Integration Day
 **Scope note:** this pass covers only Shreshtha's Day 9 (Infra & NemoClaw
-Specialist). Nipun/Rashi/Tushar's Day 9 items (fallback-chain unit test
+Specialist). Nipun/Nipun/Shreshtha's Day 9 items (fallback-chain unit test
 review, real-API integration checks, dashboard-to-backend connection) are
 tracked separately and not claimed done here.
 
@@ -198,13 +198,13 @@ VERIFYING → RESUMED) with audit hash-chain integrity remains covered by
 this pass (68 passed, 2 skipped, 0 failed across the full backend suite).
 
 All Day 9 blocker checks for Shreshtha's scope pass. Dashboard-side
-verification (Tushar connecting to this backend) and cross-machine network
+verification (Shreshtha connecting to this backend) and cross-machine network
 setup (ngrok/local-IP, moot on a single-machine build) are out of scope for
 this pass.
 
 ## Day 9 Status (Nipun) — Integration Test on Shreshtha's Machine
 **Scope note:** covers Nipun's Day 9 only (SDK Lead & Fallback Architect —
-owns Orchestrator, TriageAgent, RemediationAgent). Tushar's Day 9
+owns Orchestrator, TriageAgent, RemediationAgent). Shreshtha's Day 9
 (dashboard-to-backend connection) remains out of scope.
 
 Closed a real gap first: `api/fault_injection.py`'s `/demo/inject`
@@ -232,10 +232,10 @@ run in under a second, since no real API keys are set in this
 environment) to re-prove logic Day 8 already unit-tests in isolation.
 Full backend suite dropped from ~14s to ~4s as a result.
 
-## Day 9 Status (Rashi) — Integration Test on Shreshtha's Machine
-**Scope note:** covers Rashi's Day 9 only (Algorithms & Optimization —
+## Day 9 Status (Nipun) — Integration Test on Shreshtha's Machine
+**Scope note:** covers Nipun's Day 9 only (Algorithms & Optimization —
 owns SentinelAgent's detection algorithm, OptimizationAgent, Fault
-Injection Backend, and jointly the audit fields). Tushar's Day 9 remains
+Injection Backend, and jointly the audit fields). Shreshtha's Day 9 remains
 out of scope.
 
 New coverage: `backend/tests/test_day9_rashi_integration.py` hits the
@@ -262,8 +262,8 @@ under the 5s blocker.
 **Scope:** Day 10 across all four roles is one shared task — audit the
 exact contracts named in each person's Day-10 write-up against the real
 running code, fix what's actually broken, verify what isn't. Covers
-Nipun/Rashi's named contracts (LOOP_SUSPECTED event, ReroutePlan, Fault
-Injection response, Audit Log record) and Tushar's three example drift
+Nipun/Nipun's named contracts (LOOP_SUSPECTED event, ReroutePlan, Fault
+Injection response, Audit Log record) and Shreshtha's three example drift
 patterns (field-name drift, timestamp format drift, type drift).
 
 ### Audited clean — no fix needed
@@ -276,12 +276,12 @@ patterns (field-name drift, timestamp format drift, type drift).
 | `worker_id` as int vs string | ✅ Always `str`, enforced by Pydantic on every model |
 
 ### Real gaps found and fixed
-1. **`OPTIMIZATION_COMPLETE` had zero production subscribers.** Rashi's
+1. **`OPTIMIZATION_COMPLETE` had zero production subscribers.** Nipun's
    OptimizationAgent computes a real `ReroutePlan` and dispatches it in
    parallel with Triage on every `LOOP_SUSPECTED` — but Nipun's
    Orchestrator never subscribed to it, so the plan was silently
    discarded every single time. This is exactly what both Nipun's and
-   Rashi's Day-10 pass criteria required ("Optimization returns
+   Nipun's Day-10 pass criteria required ("Optimization returns
    ReroutePlans consumed by Orchestrator"). Fixed: `Orchestrator` now
    subscribes and stores the latest plan per worker in
    `self.reroute_plans`, logged on receipt. Covered by
@@ -348,20 +348,20 @@ incident. Caught by
 `test_repeated_fault_injection_still_detects_loop_with_cache_warm` in
 `backend/tests/test_day11_cache_circuit_integration.py`.
 
-Rashi's Day-11 cuOpt schema verification (30-min mandatory check against
+Nipun's Day-11 cuOpt schema verification (30-min mandatory check against
 the live NVIDIA API) is N/A for this project — cuOpt is already skipped
 project-wide per the Day 4-5 decision above; nothing to verify there.
 
 Full backend suite: 80 passed, 2 skipped.
 
-## Day 11 Status — Fallback Chain Unit Tests + Caching Integration (Nipun & Rashi)
+## Day 11 Status — Fallback Chain Unit Tests + Caching Integration (Nipun & Nipun)
 
 **Scope:** Nipun's guide names 4 exact malformed-Groq-JSON shapes as the
 mandatory blocker check for Day 11 ("fix ALL failures before Day 12"):
 missing closing brace, markdown code block, plain text, nested markdown
-fence. Rashi's guide's other Day-11 item (cuOpt live schema verification)
+fence. Nipun's guide's other Day-11 item (cuOpt live schema verification)
 is documented as N/A above and in `docs/cuopt_schema_verified.md`; her
-Circuit Breaker Panel UI item is also N/A here — Tushar already owns and
+Circuit Breaker Panel UI item is also N/A here — Shreshtha already owns and
 built `CircuitBreakerPanel.tsx` (Day 6); building a second one would be a
 duplicate, not a fix. Both guides converge on the same real work: run and
 harden `test_fallback_chains.py`.
@@ -405,7 +405,7 @@ cache hit from an earlier test.
   hit) — covered by `test_day11_cache_circuit_integration.py` (added
   during Shreshtha's Day 11, same shared codebase).
 - Circuit Breaker Panel real-time status from the live backend — same
-  file, same verification; nothing Nipun/Rashi-specific left to check
+  file, same verification; nothing Nipun/Nipun-specific left to check
   beyond what's already confirmed.
 
 Full backend suite: 84 passed, 2 skipped (`test_fallback_chains.py`:
@@ -426,9 +426,9 @@ every one of those transitions is already proven by
 step is only confirming the browser renders what the endpoint already
 correctly reports.
 
-## Day 11 Status — Circuit Breaker Panel Complete + Dashboard Polish (Tushar)
+## Day 11 Status — Circuit Breaker Panel Complete + Dashboard Polish (Shreshtha)
 
-**Scope:** per Tushar's guide — verify the panel against real failures
+**Scope:** per Shreshtha's guide — verify the panel against real failures
 (not directly-poked breaker objects), performance tuning (React.memo,
 bundle size), and a visual polish pass on Days 9-10's remaining UI.
 
@@ -454,7 +454,7 @@ code; the registry-to-endpoint half was already closed on Shreshtha's
 side. The only thing left is the browser-rendering step noted above —
 genuinely visual, not a code gap.
 
-One naming note: Tushar's guide describes the Groq fallback as a
+One naming note: Shreshtha's guide describes the Groq fallback as a
 *pulsing yellow halo on the Triage node in the Workflow DAG* — that
 specific visual doesn't exist yet. It's not a Day-11 gap: the same
 guide's own Day-12 section ("Fallback Indicators") lists building
@@ -506,7 +506,7 @@ errors. Full backend suite: 86 passed, 2 skipped.
 ### Verified, no fix needed
 - Panel already polls the real endpoint every 2s, already overrides
   cuOpt to a static "Unused" card, already shows hover tooltips with
-  last-failure reason/time on every card (Rashi's/Shreshtha's Day 6/11
+  last-failure reason/time on every card (Nipun's/Shreshtha's Day 6/11
   work) — all confirmed still correct.
 - Screen-size and Chrome/Safari cross-browser testing from the guide's
   polish checklist are inherently manual/visual — noted, not something
@@ -516,10 +516,10 @@ errors. Full backend suite: 86 passed, 2 skipped.
 
 **Scope:** all four Day-12 write-ups converge on one shared deliverable
 — the Post-Heal Report Card and the fallback-visibility work underneath
-it — plus two person-specific pieces (Rashi's chaos-scenario timing,
+it — plus two person-specific pieces (Nipun's chaos-scenario timing,
 Nipun's demo script). Covered together since the backend metrics work
 (Shreshtha) is a hard dependency for validating it (Nipun) and for what
-the card eventually renders (Tushar).
+the card eventually renders (Shreshtha).
 
 ### Shreshtha — Token Counter + Throughput Tracker + Report Card backend
 New: `sentinel/metrics/{token_counter,throughput_tracker,report_card}.py`,
@@ -547,7 +547,7 @@ Per the guide's own critical note ("must be REAL, not hardcoded"):
   `TriageAgent.diagnose()` now skips Nemotron once its hourly token
   budget is exhausted, same as an open circuit breaker.
 
-### Rashi — Fault Injection Testing (End-to-End)
+### Nipun — Fault Injection Testing (End-to-End)
 **Real bug found by actually writing the end-to-end test, not assuming
 it worked:** every one of the 4 fault types' synthetic log lines failed
 to match `RuleBasedHeuristic`'s regex patterns at all — `fault_injection.py`
@@ -572,7 +572,7 @@ singleton's circuit breaker open and leaking into an unrelated, later
 test file — added a reset fixture, same pattern as existing
 `_reset_circuit_registry` fixtures elsewhere.
 
-### Tushar — Fallback Indicators + Post-Heal Report Card shell
+### Shreshtha — Fallback Indicators + Post-Heal Report Card shell
 The dashboard already had full UI plumbing for a generic fallback badge
 (`fallbackActive: boolean` in the Zustand store, rendered by AgentOrb/
 WorkflowDAG/HealthIndicators) that nothing had ever set to `true` — real
@@ -619,9 +619,9 @@ component (same Day-11 pattern as SimilarityGraph/HealthIndicators) —
 adding it pushed the main bundle to 505.74kB, back over the 500kB
 threshold Day 11 fixed; lazy-loading brought it to 485.37kB.
 
-Rashi's own guide separately describes her building a competing "Report
+Nipun's own guide separately describes her building a competing "Report
 Card Modal" component — same class of duplicate-ownership inconsistency
-as Day 11's Circuit Breaker Panel; Tushar's version is the one that
+as Day 11's Circuit Breaker Panel; Shreshtha's version is the one that
 exists in the real codebase, consistent with that precedent.
 
 ### Nipun — Demo Script + validation
@@ -632,7 +632,7 @@ code) rather than paraphrasing. Cross-checked the two integration points
 the guide names:
 - `ReportCardMetrics`' 6 fields (backend `report_card.py` vs frontend
   `PostHealReportCard.tsx`'s interface) match exactly — no drift.
-- Rashi's chaos-scenario fix (above) and Shreshtha's metrics tests
+- Nipun's chaos-scenario fix (above) and Shreshtha's metrics tests
   (above) both pass, reviewed as part of this same pass rather than as
   separate, redundant validation tests.
 
@@ -647,15 +647,15 @@ Full backend suite: 110 passed, 2 skipped. Dashboard: clean
 
 ## Day 13 Status — Report Card Backend Wiring, Wrapper Stress Test, Backup Plans, Timing Lock
 
-**Scope:** Rashi's and Shreshtha's individual guides both assign the
+**Scope:** Nipun's and Shreshtha's individual guides both assign the
 exact same wrapper stress test (same command, same targets) — the same
 duplicate-ownership pattern seen on Days 11-12 — run once for real
-rather than twice. Rashi's guide also separately claims she completes
+rather than twice. Nipun's guide also separately claims she completes
 "Report Card Modal... backend wiring," which is the same component
-Tushar already owns (`PostHealReportCard.tsx`, built Day 12); that
-wiring is covered under Tushar's section below, not duplicated.
+Shreshtha already owns (`PostHealReportCard.tsx`, built Day 12); that
+wiring is covered under Shreshtha's section below, not duplicated.
 
-### Tushar — Report Card Backend Wiring + Animation Polish
+### Shreshtha — Report Card Backend Wiring + Animation Polish
 `App.tsx`'s `state_change` handler now fetches `GET /api/metrics` and
 populates `PostHealReportCard` for real when `trigger_event ===
 "REMEDIATION_SUCCESS"` arrives — the exact event the guide names,
@@ -678,7 +678,7 @@ standalone UI element anywhere except inside the Post-Heal Report Card
 (only visible at the very end). Flagged rather than built unasked —
 it's real new UI work, not "polish" or "timing lock."
 
-### Shreshtha + Rashi — Wrapper Stress Test + Performance Tuning
+### Shreshtha + Nipun — Wrapper Stress Test + Performance Tuning
 Ran for real, not simulated: 40 concurrent `/v1/remediate` requests
 against a live `wrapper_service.py` (mock mode). **Normal load**: 40/40
 succeeded, P50/P95/P99 all ~2.05s (well under the 3s/8s/15s targets),
@@ -733,7 +733,7 @@ video) correctly deferred to Shreshtha's Day 14, per the guide.
 ### Manual steps (all four guides converge on the same one)
 Every guide's real Day-13 blocker is the same: **rehearse with the team,
 out loud, timing every beat against Nipun's narration** (Nipun's guide:
-"rehearsed 3+ times"; Tushar's guide: "final run-through with Nipun
+"rehearsed 3+ times"; Shreshtha's guide: "final run-through with Nipun
 narrating... if timing is off, adjust and re-test until perfect"). That
 can't be done from here — it requires an actual person speaking and a
 teammate operating the dashboard in response, in real time. Everything
@@ -748,11 +748,11 @@ Full backend suite: 111 passed, 2 skipped. Dashboard: clean
 
 **Scope:** Day 14 across all four guides is overwhelmingly a live,
 multi-person, multi-machine rehearsal (Nipun narrating, Shreshtha
-hosting, Tushar operating the dashboard, Rashi monitoring) — none of
+hosting, Shreshtha operating the dashboard, Nipun monitoring) — none of
 that is something to build. Two genuinely scriptable gaps existed in
 the guides' pre-demo checklists, both closed:
 
-### `scripts/verify_audit_chain.py` (Rashi)
+### `scripts/verify_audit_chain.py` (Nipun)
 Her checklist names "Hash chain verification script passes" as a
 pre-demo check, but no standalone script existed — `verify_chain()` was
 only ever called from inside the test suite. Built one: loads the real
@@ -784,7 +784,7 @@ full suite runs, chain intact every time. The corrupted local
 machine's accumulated test/rehearsal noise) was archived, not deleted,
 each time it was found broken.
 
-### `scripts/pre_demo_check.py` (Shreshtha + Rashi)
+### `scripts/pre_demo_check.py` (Shreshtha + Nipun)
 Both guides list an overlapping set of "run this 30-60 min before demo"
 checks. Consolidated the ones that are genuinely server-side/scriptable
 into one script, run for real against live backend + wrapper processes:
@@ -816,7 +816,7 @@ runs for the audit-chain fix specifically). Dashboard: clean
 **Scope:** all four guides converge on one shared deliverable set —
 README, API docs, architecture diagrams, resume bullets, two grep
 verifications, a clean-machine docker-compose test, and the v1.0 tag —
-plus one person-specific piece (Tushar's dashboard code cleanup).
+plus one person-specific piece (Shreshtha's dashboard code cleanup).
 
 ### Verification greps
 Zero `agentiq` matches anywhere. Zero real `openai` matches — the two
@@ -826,7 +826,7 @@ API shape, and Groq's own real endpoint path
 reference to actually using OpenAI's service, and no `openai` package
 appears in any requirements file.
 
-### Tushar — dashboard code cleanup
+### Shreshtha — dashboard code cleanup
 Removed the two plain `console.log` calls that weren't error/warning
 diagnostics (kept every `console.warn`/`console.error`, which are real
 diagnostic signal, not debug noise). `tsc --noEmit` and

@@ -70,7 +70,15 @@ class NIMEmbeddingClient:
 class SentinelAgent:
     def __init__(self):
         self.nim_client = NIMEmbeddingClient()
-        self.local_embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        # Lazy-loaded on first actual use in embed()'s fallback path, not
+        # here. Constructing SentenceTransformer(...) eagerly meant the
+        # backend's ability to even BOOT depended on reaching HuggingFace
+        # at process startup — undermining the entire point of this being
+        # a *fallback* model, which should only need network reachability
+        # when NIM has already failed and it's actually needed. Confirmed
+        # live: a container with no route to huggingface.co (DNS failure)
+        # crashed on import before the app ever started serving requests.
+        self._local_embedder: SentenceTransformer | None = None
         self.circuit_breaker = CircuitBreaker(failures=3, timeout=60)
         self.embedding_cache = EmbeddingCache(ttl=3600)
         self.windows = {}
@@ -80,6 +88,22 @@ class SentinelAgent:
         # node's fallback ring on the dashboard. embed()'s own return
         # contract (just the vector) stays unchanged for existing callers.
         self.last_embed_origin = "NIM"
+        # Most recent similarity score detect_loop() computed for a given
+        # worker, regardless of whether that step actually crossed the
+        # LOOP_SUSPECTED threshold — read by fault_injection.py after each
+        # detect_loop() call to broadcast a "similarity" envelope, so the
+        # dashboard's Similarity Graph has a real per-step trace instead
+        # of only ever seeing the final threshold-crossing sample.
+        self.last_similarity = None
+
+    def _get_local_embedder(self) -> SentenceTransformer:
+        """Constructs (and caches) the sentence-transformers fallback
+        model on first real use. Callers must handle this raising — a
+        network failure downloading model weights, or a bad local cache,
+        should fall through to the next tier ("hash"), not crash."""
+        if self._local_embedder is None:
+            self._local_embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        return self._local_embedder
 
     def embed(self, output_text: str) -> list:
         cache_key = hashlib.sha256(output_text.encode()).hexdigest()
@@ -104,13 +128,18 @@ class SentinelAgent:
                 circuit_registry.get("NIM").record_failure(reason=str(e))  # NEW
 
         try:
-            embedding = self.local_embedder.encode(output_text).tolist()
+            embedder = self._get_local_embedder()
+            embedding = embedder.encode(output_text).tolist()
             self.embedding_cache.set(
                 cache_key, embedding, fallback_origin="sentence-transformers"
             )
             self.last_embed_origin = "sentence-transformers"
             return embedding
         except Exception as e:
+            # Covers both "couldn't download/load the model at all" (the
+            # lazy-construction case this fix targets) and "model loaded
+            # fine but encode() itself failed" — either way, fall through
+            # to the hash tier below rather than raising.
             print(f"[SentinelAgent] sentence-transformers failed: {e}")
 
         self.last_embed_origin = "hash"
@@ -147,6 +176,7 @@ class SentinelAgent:
             )
             similarities.append(sim)
 
+        self.last_similarity = similarities[-1]
         all_similar = all(s > 0.92 for s in similarities)
 
         last_three_errors = [w["error_signature"] for w in window_list[-3:]]

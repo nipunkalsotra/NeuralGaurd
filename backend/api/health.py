@@ -2,7 +2,7 @@
 health.py
 Day 2 — Shreshtha (Person 3)
 
-Simple health check endpoint so Nipun, Rashi, and Tushar can verify the
+Simple health check endpoint so Nipun, Nipun, and Shreshtha can verify the
 backend is alive before wiring anything else up to it.
 """
 

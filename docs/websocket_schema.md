@@ -1,8 +1,8 @@
 # WebSocket Stream Schema — `/ws/stream`
 
 **Owner:** Shreshtha (Person 3)
-**Consumer:** Tushar (Person 4) — dashboard WebSocket client
-**Status:** DRAFT — lock by Day 7. Do not change field names/types after lock without a standup sync; Tushar's components bind directly to this shape.
+**Consumer:** Shreshtha — dashboard WebSocket client
+**Status:** DRAFT — lock by Day 7. Do not change field names/types after lock without a standup sync; Shreshtha's components bind directly to this shape.
 
 ---
 
@@ -29,7 +29,7 @@ Every message — from backend to dashboard, in either direction — is a single
 | `timestamp`  | string | yes      | ISO 8601, UTC, millisecond precision. Format: `YYYY-MM-DDTHH:MM:SS.sssZ`. Generated server-side at emit time, not client-side. |
 
 ### Why `payload` is always a string
-Different `type`s need very different payload shapes (raw CLI text vs. structured JSON vs. a bare state name). Rather than making the envelope's shape conditional on `type` (which makes Tushar write different parsers per message), we keep the envelope **fixed** and let each `type` define what's *inside* the string. Dashboard components `JSON.parse()` the payload only when they know it's structured (see §4).
+Different `type`s need very different payload shapes (raw CLI text vs. structured JSON vs. a bare state name). Rather than making the envelope's shape conditional on `type` (which makes Shreshtha write different parsers per message), we keep the envelope **fixed** and let each `type` define what's *inside* the string. Dashboard components `JSON.parse()` the payload only when they know it's structured (see §4).
 
 ---
 
@@ -42,6 +42,7 @@ Different `type`s need very different payload shapes (raw CLI text vs. structure
 | `mock_banner`  | Wrapper has fallen back to mock mode for this job                    | Sandbox Terminal banner + Circuit Breaker Panel |
 | `state_change` | Orchestrator FSM transition (e.g. `HEALTHY` → `LOOP_SUSPECTED`)      | Workflow DAG, Health Indicators |
 | `audit_event`  | Immutable audit log record (mirrors what's written to `audit_logs`)  | Audit Log Stream              |
+| `similarity`   | One real cosine-similarity sample from Sentinel's sliding window (`api/websocket.py`'s `broadcast_similarity`, added v1.1) | Similarity Graph |
 
 Additional control-plane types (not part of the Day 3 contract, already implemented in the websocket skeleton — documented here for completeness):
 
@@ -62,6 +63,7 @@ Additional control-plane types (not part of the Day 3 contract, already implemen
 | `mock_banner`  | `fallback_activated`, `fallback_reset`                                                  |
 | `state_change` | `HEALTHY`, `LOOP_SUSPECTED`, `DIAGNOSING`, `REMEDIATING`, `VERIFYING`, `RESUMED`, `ESCALATED`, `MOCK_VERIFICATION` (the **new** state being entered) |
 | `audit_event`  | `transition_logged`                                                                      |
+| `similarity`   | `similarity_sample`                                                                      |
 
 ---
 
@@ -91,7 +93,7 @@ Parsed shape (after `JSON.parse(payload)`):
 ```json
 "{\"from_state\": \"HEALTHY\", \"to_state\": \"LOOP_SUSPECTED\", \"trigger_event\": \"LOOP_SUSPECTED\", \"agent_name\": \"SentinelAgent\", \"confidence_score\": null, \"fallback_used\": false, \"fallback_origin\": null, \"root_cause\": null, \"fix_type\": null, \"affected_field\": null, \"previous_hash\": \"a1b2...\", \"current_hash\": \"c3d4...\"}"
 ```
-Mirrors the audit log record structure defined in the master doc §5.3 — same field names, so Tushar can reuse one type definition for both the live stream and any historical audit log fetch.
+Mirrors the audit log record structure defined in the master doc §5.3 — same field names, so Shreshtha can reuse one type definition for both the live stream and any historical audit log fetch.
 
 **Day 10 addition (additive, non-breaking):** `root_cause`, `fix_type`,
 `affected_field` — null on every transition except the one into
@@ -121,12 +123,12 @@ are unaffected.
 
 ## 6. Backend implementation note
 
-The Day 2 `websocket.py` router skeleton (`route_message`) currently dispatches on a bare `type` field for **inbound** client messages (`ping`/`pong` only, so far). This schema governs **outbound** server→dashboard broadcasts via `manager.broadcast(...)`. Both directions share the same envelope shape for simplicity — Tushar's client and this backend can use one shared type definition.
+The Day 2 `websocket.py` router skeleton (`route_message`) currently dispatches on a bare `type` field for **inbound** client messages (`ping`/`pong` only, so far). This schema governs **outbound** server→dashboard broadcasts via `manager.broadcast(...)`. Both directions share the same envelope shape for simplicity — Shreshtha's client and this backend can use one shared type definition.
 
 ## 7. Sign-off
 
-- [x] Shared with Tushar in standup — Day 3
-- [x] Tushar acknowledges he can build Triage Report Card / Sandbox Terminal / Audit Log Stream against this shape
+- [x] Shared with Shreshtha in standup — Day 3
+- [x] Shreshtha acknowledges he can build Triage Report Card / Sandbox Terminal / Audit Log Stream against this shape
 - [x] Locked (no breaking changes without team sync) — Day 7, confirmed 2026-07-28
 
 **Status: LOCKED — Day 7 ✅**
