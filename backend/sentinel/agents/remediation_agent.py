@@ -6,6 +6,7 @@ wrapper service (mock or real — agent is completely agnostic to which)
 over HTTP at POST /v1/remediate. Never calls NemoClaw CLI directly.
 """
 
+import asyncio
 import logging
 import os
 
@@ -89,6 +90,18 @@ class RemediationAgent:
             result = response.json()
             self.circuit_breaker.record_success()
             circuit_registry.get("NemoClaw").record_success()  # NEW
+            # Demo pacing: the wrapper call above frequently resolves in
+            # single-digit milliseconds (the mock wrapper does no real
+            # work), so the gap between the reroute plan landing
+            # (OPTIMIZATION_COMPLETE, where throughput visibly dips) and
+            # the worker fully RESUMING (where it recovers) was often
+            # under 100ms end to end — too tight for a human watching
+            # the Control Plane's live throughput number to ever
+            # perceive the dip, even with an event-reactive frontend
+            # fetch. Widens that window without touching the real
+            # verification result or its timing-sensitive circuit
+            # breaker bookkeeping above.
+            await asyncio.sleep(0.45)
             return result
 
         except httpx.TimeoutException:

@@ -119,7 +119,15 @@ interface DashboardState {
   diagnosis: DiagnosisResult | null;
   reportCard: ReportCardMetricsLike | null;
 
+  // Real, live, event-driven — set the instant an OPTIMIZATION_COMPLETE
+  // record carrying projected_throughput_pct arrives over the socket,
+  // and reset to 100 the instant a worker actually RESUMES. No polling,
+  // no REST round-trip: this used to be a separate timer racing a
+  // sub-second incident window and frequently missing the dip entirely.
+  throughput: number;
+
   setConnection: (kind: DashboardState["connectionKind"], connected: boolean) => void;
+  setThroughput: (pct: number) => void;
   ingestEnvelope: (envelope: WsEnvelope) => void;
   clearTerminal: () => void;
   closeDiagnosis: () => void;
@@ -149,8 +157,10 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   similarity: [],
   diagnosis: null,
   reportCard: null,
+  throughput: 100,
 
   setConnection: (kind, connected) => set({ connectionKind: kind, connected }),
+  setThroughput: (pct) => set({ throughput: pct }),
 
   setDemoAgentState: (id, state, event) =>
     set((s) => {
@@ -160,7 +170,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
 
   setDemoEdge: (edgeId) => set({ activeEdge: edgeId }),
 
-  resetAll: () => set({ agents: initialAgents(), activeEdge: null, auditLog: [], reportCard: null }),
+  resetAll: () => set({ agents: initialAgents(), activeEdge: null, auditLog: [], reportCard: null, throughput: 100 }),
 
   clearTerminal: () => set({ terminalLines: [] }),
   closeDiagnosis: () => set({ diagnosis: null }),
@@ -193,6 +203,17 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       try {
         const record = JSON.parse(payload) as AuditRecord;
         set((s) => ({ auditLog: insertByTimestamp(s.auditLog, record, MAX_AUDIT_ENTRIES) }));
+
+        // Real, event-driven throughput — dips the instant a reroute
+        // plan's real solver output arrives, recovers the instant the
+        // worker actually resumes. ESCALATED deliberately does NOT
+        // reset it: still broken, waiting on a human, not the same as
+        // healed (mirrors throughput_tracker.py's SETTLED_STATES).
+        if (record.trigger_event === "OPTIMIZATION_COMPLETE" && record.projected_throughput_pct != null) {
+          set({ throughput: record.projected_throughput_pct });
+        } else if (record.to_state === "RESUMED") {
+          set({ throughput: 100 });
+        }
 
         const fallbackAgent = record.fallback_origin
           ? FALLBACK_ORIGIN_TO_AGENT[record.fallback_origin]

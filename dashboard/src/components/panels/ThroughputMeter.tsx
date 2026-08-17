@@ -1,18 +1,30 @@
 // src/components/panels/ThroughputMeter.tsx
-// The persistent, standalone live throughput counter documented in the
-// old README's "Future work" as explicitly missing — the demo narrative
-// (100% → dips during an incident → recovers to ~97%) previously only
-// ever rendered once, inside the final Post-Heal Report Card modal.
-import { useEffect, useState } from "react";
+// The persistent, standalone live throughput counter.
+//
+// v1 polled /api/metrics on a 1.5s timer — completely decoupled from
+// when the value actually changed, so a sub-2-second incident routinely
+// slipped between two polls entirely.
+// v2 tried to react to the audit stream but still went through a REST
+// round-trip per event, guarded by a "one fetch at a time" ref that
+// could silently swallow the recovery fetch if the dip fetch was still
+// in flight when RESUMED arrived — still racy.
+// v3 (this version): the throughput value now lives directly on the
+// store, updated synchronously the instant the WebSocket delivers the
+// record that actually changes it (see store/index.ts's audit_event
+// handler) — zero network round-trip, zero polling, zero race. The one
+// remaining REST call is a single fetch on mount, for the genuine edge
+// case of loading the page mid-incident, before this tab ever received
+// the WebSocket event that caused it.
+import { useEffect } from "react";
 import { motion, useSpring, useTransform } from "framer-motion";
 import { TrendingUp } from "lucide-react";
 import { useDataSource } from "../../app/dataSourceContext";
-
-const POLL_MS = 1500;
+import { useDashboardStore } from "../../store";
 
 export default function ThroughputMeter() {
   const { source } = useDataSource();
-  const [pct, setPct] = useState(100);
+  const pct = useDashboardStore((s) => s.throughput);
+  const setThroughput = useDashboardStore((s) => s.setThroughput);
   const spring = useSpring(100, { stiffness: 90, damping: 20 });
   const rounded = useTransform(spring, (v) => `${Math.round(v)}%`);
 
@@ -22,21 +34,16 @@ export default function ThroughputMeter() {
 
   useEffect(() => {
     let cancelled = false;
-    const poll = async () => {
-      try {
-        const m = await source.fetchMetrics();
-        if (!cancelled) setPct(m.throughput_maintained);
-      } catch {
-        /* keep last known value */
-      }
-    };
-    poll();
-    const id = setInterval(poll, POLL_MS);
+    source
+      .fetchMetrics()
+      .then((m) => {
+        if (!cancelled) setThroughput(m.throughput_maintained);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
-      clearInterval(id);
     };
-  }, [source]);
+  }, [source, setThroughput]);
 
   const tone = pct >= 95 ? "text-state-healthy" : pct >= 80 ? "text-state-suspected" : "text-state-escalated";
 

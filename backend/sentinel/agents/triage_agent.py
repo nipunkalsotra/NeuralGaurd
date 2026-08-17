@@ -41,7 +41,15 @@ class NemotronClient:
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 300,
             },
-            timeout=25.0,
+            # Was 25.0 — on a cache miss with Nemotron unreachable, that
+            # meant the PRIMARY tier alone could burn 25s before even
+            # attempting the fallback chain, undermining the entire
+            # fail-fast/graceful-degradation pitch this project makes.
+            # Confirmed live: a real timeout here took the full 25s
+            # before Groq was even tried. A short diagnostic completion
+            # that hasn't returned in 6s isn't coming back fast enough
+            # to matter for a live healing cycle either way.
+            timeout=6.0,
         )
         response.raise_for_status()
         data = response.json()
@@ -69,7 +77,7 @@ class GroqClient:
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 300,
             },
-            timeout=15.0,
+            timeout=6.0,  # same reasoning as NemotronClient.chat() above
         )
         response.raise_for_status()
         data = response.json()

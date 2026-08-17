@@ -23,6 +23,7 @@ healing — exactly the resilience path Day 12's chaos testing exists to
 validate. Each fault now carries a realistic `log_message` instead.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -172,6 +173,18 @@ async def inject_fault(request: InjectRequest):
             # last_similarity / websocket.py's broadcast_similarity).
             if _sentinel.last_similarity is not None:
                 await broadcast_similarity(request.target, _sentinel.last_similarity, float(step))
+            # Demo pacing: detect_loop() itself is CPU-bound and resolves
+            # in microseconds, and Triage's diagnosis is frequently a
+            # cache hit (DiagnosisCache, 30-min TTL) — with zero pacing
+            # here the entire HEALTHY -> RESUMED cycle completed in
+            # under 100ms end to end, well under what a human watching
+            # the Control Plane's live activity banner could perceive.
+            # This mirrors the pacing the in-browser simulator already
+            # has deliberately (sim/index.ts's clock.sleep(120) per
+            # step) — real production paths stay exactly as fast as
+            # they already are; only this dashboard-facing demo entry
+            # point paces itself so the detection phase is visible.
+            await asyncio.sleep(0.22)
 
         if loop_event:
             # Publish onto the shared EventBus rather than faking a single

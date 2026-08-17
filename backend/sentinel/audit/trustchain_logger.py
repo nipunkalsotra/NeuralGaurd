@@ -42,12 +42,24 @@ class TrustChainLogger:
         root_cause: str = None,
         fix_type: str = None,
         affected_field: str = None,
+        projected_throughput_pct: float = None,
     ) -> dict:
         # root_cause/fix_type/affected_field (Day 10): additive fields,
         # null for every transition except DIAGNOSING->REMEDIATING/
         # ESCALATED — carries Triage's real diagnosis onto the wire so the
         # dashboard's Triage Report Card can finally open on live data
         # instead of only the two manual demo buttons.
+        #
+        # projected_throughput_pct: same idea, one more field later. The
+        # real number OptimizationAgent computes was only ever stored in
+        # Orchestrator.reroute_plans (in-memory) and exposed via a
+        # separate REST poll — the dashboard's live throughput meter had
+        # no way to react to it in real time, only guess via a timer
+        # racing against a sub-second incident window. Broadcasting it
+        # on the OPTIMIZATION_COMPLETE record itself means the frontend
+        # can react the instant the WebSocket message arrives, with zero
+        # network round-trip and zero polling race — additive, null on
+        # every other transition.
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "worker_id": worker_id,
@@ -61,6 +73,7 @@ class TrustChainLogger:
             "root_cause": root_cause,
             "fix_type": fix_type,
             "affected_field": affected_field,
+            "projected_throughput_pct": projected_throughput_pct,
             "previous_hash": self.previous_hash,
         }
         record_content = json.dumps(record, sort_keys=True)

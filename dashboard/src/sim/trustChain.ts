@@ -38,6 +38,7 @@ export interface TransitionInput {
   root_cause?: string | null;
   fix_type?: string | null;
   affected_field?: string | null;
+  projected_throughput_pct?: number | null;
 }
 
 export class TrustChainLogger {
@@ -58,6 +59,7 @@ export class TrustChainLogger {
       root_cause: input.root_cause ?? null,
       fix_type: input.fix_type ?? null,
       affected_field: input.affected_field ?? null,
+      projected_throughput_pct: input.projected_throughput_pct ?? null,
       previous_hash: this.previousHash,
     };
 

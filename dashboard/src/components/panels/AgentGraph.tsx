@@ -20,6 +20,7 @@ import "reactflow/dist/style.css";
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import AgentOrbNode, { type AgentOrbData } from "../viz/AgentOrb";
 import SignalEdge from "../viz/SignalEdge";
+import SystemActivityBanner from "./SystemActivityBanner";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
 import { useDashboardStore, AGENT_LABELS, type AgentId } from "../../store";
 
@@ -190,6 +191,8 @@ export default function AgentGraph() {
         <LiveWaveform />
         <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-white/80 text-glow-white">Live topology</span>
       </div>
+
+      <SystemActivityBanner />
 
       <motion.div
         className="relative z-[2] h-full w-full"
